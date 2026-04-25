@@ -1,0 +1,99 @@
+{
+  "version": "1.0",
+  "sceneId": "550e8400-e29b-41d4-a716-446655440000",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "floorplan": {
+    "width": 40,
+    "depth": 30,
+    "rooms": [
+      {
+        "id": "room_1",
+        "name": "SSU Atrium",
+        "x": 0,
+        "y": 0,
+        "width": 40,
+        "height": 30,
+        "type": "main_hall"
+      }
+    ],
+    "walls": [
+      {
+        "x1": 0,
+        "y1": 0,
+        "x2": 40,
+        "y2": 0,
+        "height": 4
+      },
+      {
+        "x1": 40,
+        "y1": 0,
+        "x2": 40,
+        "y2": 30,
+        "height": 4
+      },
+      {
+        "x1": 40,
+        "y1": 30,
+        "x2": 0,
+        "y2": 30,
+        "height": 4
+      },
+      {
+        "x1": 0,
+        "y1": 30,
+        "x2": 0,
+        "y2": 0,
+        "height": 4
+      }
+    ],
+    "scale": 10,
+    "confidence": 0.92,
+    "notes": "Large open atrium detected. Two entrance points on south wall."
+  },
+  "configuration": {
+    "useCase": "hackathon with hacking stations along the walls, sponsor booths in the center, and a ceremony stage at the front",
+    "useCaseCategory": "hackathon",
+    "objects": [
+      {
+        "id": "obj_1",
+        "type": "table",
+        "roomId": "room_1",
+        "x": 3,
+        "y": 5,
+        "z": 0,
+        "width": 2,
+        "depth": 1,
+        "height": 0.75,
+        "rotation": 0,
+        "label": "Hacking Station 1"
+      },
+      {
+        "id": "obj_2",
+        "type": "stage",
+        "roomId": "room_1",
+        "x": 20,
+        "y": 2,
+        "z": 0,
+        "width": 10,
+        "depth": 4,
+        "height": 0.5,
+        "rotation": 0,
+        "label": "Ceremony Stage"
+      },
+      {
+        "id": "obj_3",
+        "type": "booth",
+        "roomId": "room_1",
+        "x": 15,
+        "y": 15,
+        "z": 0,
+        "width": 2,
+        "depth": 2,
+        "height": 2,
+        "rotation": 0,
+        "label": "Sponsor Booth 1"
+      }
+    ],
+    "placementNotes": "Hacking stations placed along north, east, and west walls. Sponsor booths arranged in the center. Ceremony stage placed against the north wall."
+  }
+}

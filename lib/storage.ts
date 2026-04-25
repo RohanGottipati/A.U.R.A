@@ -1,44 +1,55 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
+import { getEnv } from './env';
 
-const s3 = new S3Client({
-  endpoint: process.env.VULTR_STORAGE_ENDPOINT,
-  region: 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.VULTR_STORAGE_ACCESS_KEY!,
-    secretAccessKey: process.env.VULTR_STORAGE_SECRET_KEY!,
-  },
-  forcePathStyle: true,
-});
+let s3: S3Client | null = null;
 
-const BUCKET = process.env.VULTR_STORAGE_BUCKET!;
+function getS3Client(): S3Client {
+  if (!s3) {
+    const env = getEnv();
+    s3 = new S3Client({
+      endpoint: env.VULTR_STORAGE_ENDPOINT,
+      region: 'us-east-1',
+      credentials: {
+        accessKeyId: env.VULTR_STORAGE_ACCESS_KEY,
+        secretAccessKey: env.VULTR_STORAGE_SECRET_KEY,
+      },
+      forcePathStyle: true,
+    });
+  }
+
+  return s3;
+}
 
 export const storage = {
   async uploadImage(key: string, buffer: Buffer, contentType: string): Promise<string> {
-    await s3.send(new PutObjectCommand({
-      Bucket: BUCKET,
+    const env = getEnv();
+    await getS3Client().send(new PutObjectCommand({
+      Bucket: env.VULTR_STORAGE_BUCKET,
       Key: key,
       Body: buffer,
       ContentType: contentType,
       ACL: 'public-read',
     }));
-    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+    return `${env.VULTR_STORAGE_ENDPOINT}/${env.VULTR_STORAGE_BUCKET}/${key}`;
   },
 
   async uploadScene(key: string, sceneData: object): Promise<string> {
+    const env = getEnv();
     const body = JSON.stringify(sceneData, null, 2);
-    await s3.send(new PutObjectCommand({
-      Bucket: BUCKET,
+    await getS3Client().send(new PutObjectCommand({
+      Bucket: env.VULTR_STORAGE_BUCKET,
       Key: key,
       Body: body,
       ContentType: 'application/json',
       ACL: 'public-read',
     }));
-    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+    return `${env.VULTR_STORAGE_ENDPOINT}/${env.VULTR_STORAGE_BUCKET}/${key}`;
   },
 
   async getScene(key: string): Promise<object> {
-    const response = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+    const { VULTR_STORAGE_BUCKET } = getEnv();
+    const response = await getS3Client().send(new GetObjectCommand({ Bucket: VULTR_STORAGE_BUCKET, Key: key }));
     const stream = response.Body as Readable;
     const chunks: Buffer[] = [];
     for await (const chunk of stream) chunks.push(chunk as Buffer);
@@ -46,6 +57,7 @@ export const storage = {
   },
 
   getPublicUrl(key: string): string {
-    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+    const env = getEnv();
+    return `${env.VULTR_STORAGE_ENDPOINT}/${env.VULTR_STORAGE_BUCKET}/${key}`;
   }
 };

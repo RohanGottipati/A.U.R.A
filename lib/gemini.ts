@@ -1,13 +1,21 @@
 import { GoogleGenerativeAI, Part } from '@google/generative-ai';
+import { getEnv } from './env';
 
-const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const model = genai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+let genai: GoogleGenerativeAI | null = null;
+
+function getModel() {
+  if (!genai) {
+    genai = new GoogleGenerativeAI(getEnv().GEMINI_API_KEY);
+  }
+
+  return genai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+}
 
 export async function callGemini(prompt: string, imageParts?: Part[]): Promise<string> {
   const parts: Part[] = [{ text: prompt }];
   if (imageParts) parts.unshift(...imageParts);
 
-  const result = await model.generateContent({ contents: [{ role: 'user', parts }] });
+  const result = await getModel().generateContent({ contents: [{ role: 'user', parts }] });
   const text = result.response.text();
 
   if (!text) throw new Error('Gemini returned empty response');

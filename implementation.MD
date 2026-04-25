@@ -275,6 +275,7 @@ floorplan-ai/
 │   ├── SceneViewer.tsx           # Wrapper for Three.js + controls UI
 │   └── ui/                       # Shared UI components
 ├── lib/
+│   ├── env.ts                    # Validated runtime environment access
 │   ├── gemini.ts                 # Gemini API client
 │   ├── backboard.ts              # Backboard agent orchestration
 │   ├── storage.ts                # Vultr Object Storage client
@@ -287,12 +288,19 @@ floorplan-ai/
 │   └── scene.ts                  # All TypeScript interfaces (the schema)
 ├── public/
 │   └── demo/
-│       └── bearhacks-floorplan.jpg  # The BearHacks demo floor plan
+│       ├── bearhacks-floorplan.jpg  # The BearHacks demo floor plan
+│       └── example-scene.json       # Checked-in sample scene for frontend work
 ├── scripts/
 │   └── seed-demo.ts              # Pre-generates the BearHacks demo scene
-├── .env.local                    # All environment variables
+├── legacy/
+│   ├── aura-backend/             # Archived A.U.R.A backend (inactive)
+│   └── aura-frontend/            # Archived A.U.R.A frontend (inactive)
+├── .env.example                  # Tracked environment variable template
+├── .env.local                    # Local runtime values copied from .env.example
 └── README.md
 ```
+
+The archived `legacy/` directory is not part of the active FloorPlan AI app. All current implementation work happens in the root app, `lib/`, `types/`, `scripts/`, and `public/demo/`.
 
 ---
 
@@ -365,20 +373,30 @@ CREATE INDEX idx_jobs_created ON jobs(created_at DESC);
 
 ```typescript
 import { Pool } from 'pg';
+import { getEnv } from './env';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+let pool: Pool | null = null;
+
+function getPool(): Pool {
+  if (!pool) {
+    const { DATABASE_URL } = getEnv();
+    pool = new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+  }
+
+  return pool;
+}
 
 export const db = {
-  query: (text: string, params?: unknown[]) => pool.query(text, params),
+  query: (text: string, params?: unknown[]) => getPool().query(text, params),
 
-  async createJob(useCaseText: string, floorplanStorageKey: string): Promise<string> {
-    const result = await pool.query(
-      `INSERT INTO jobs (use_case, floorplan_storage_key)
-       VALUES ($1, $2) RETURNING id`,
-      [useCaseText, floorplanStorageKey]
+  async createJob(jobId: string, useCaseText: string, floorplanStorageKey: string): Promise<string> {
+    const result = await getPool().query(
+      `INSERT INTO jobs (id, use_case, floorplan_storage_key)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [jobId, useCaseText, floorplanStorageKey]
     );
     return result.rows[0].id;
   },
@@ -397,15 +415,16 @@ export const db = {
     if (extras?.errorMessage) { fields.push(`error_message = $${i++}`); values.push(extras.errorMessage); }
     if (extras?.sceneId)      { fields.push(`scene_id = $${i++}`); values.push(extras.sceneId); }
 
-    await pool.query(`UPDATE jobs SET ${fields.join(', ')} WHERE id = $1`, values);
+    await getPool().query(`UPDATE jobs SET ${fields.join(', ')} WHERE id = $1`, values);
   },
 
   async getJob(jobId: string) {
-    const result = await pool.query('SELECT * FROM jobs WHERE id = $1', [jobId]);
+    const result = await getPool().query('SELECT * FROM jobs WHERE id = $1', [jobId]);
     return result.rows[0] ?? null;
   },
 
   async createScene(params: {
+    sceneId: string;
     jobId: string;
     sceneStorageKey: string;
     useCase: string;
@@ -415,13 +434,13 @@ export const db = {
     objectCount: number;
     shareUrl: string;
   }): Promise<string> {
-    const result = await pool.query(
+    const result = await getPool().query(
       `INSERT INTO scenes
-         (job_id, scene_storage_key, use_case, use_case_category,
+         (id, job_id, scene_storage_key, use_case, use_case_category,
           floorplan_width, floorplan_depth, object_count, share_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
       [
-        params.jobId, params.sceneStorageKey, params.useCase,
+        params.sceneId, params.jobId, params.sceneStorageKey, params.useCase,
         params.useCaseCategory, params.floorplanWidth, params.floorplanDepth,
         params.objectCount, params.shareUrl
       ]
@@ -430,7 +449,7 @@ export const db = {
   },
 
   async getScene(sceneId: string) {
-    const result = await pool.query('SELECT * FROM scenes WHERE id = $1', [sceneId]);
+    const result = await getPool().query('SELECT * FROM scenes WHERE id = $1', [sceneId]);
     return result.rows[0] ?? null;
   }
 };
@@ -445,48 +464,59 @@ Vultr Object Storage is S3-compatible. Use the `@aws-sdk/client-s3` package.
 ```typescript
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
+import { getEnv } from './env';
 
-const s3 = new S3Client({
-  endpoint: process.env.VULTR_STORAGE_ENDPOINT, // e.g. https://ewr1.vultrobjects.com
-  region: 'us-east-1', // required by SDK but ignored by Vultr
-  credentials: {
-    accessKeyId: process.env.VULTR_STORAGE_ACCESS_KEY!,
-    secretAccessKey: process.env.VULTR_STORAGE_SECRET_KEY!,
-  },
-  forcePathStyle: true,
-});
+let s3: S3Client | null = null;
 
-const BUCKET = process.env.VULTR_STORAGE_BUCKET!;
+function getS3Client(): S3Client {
+  if (!s3) {
+    const env = getEnv();
+    s3 = new S3Client({
+      endpoint: env.VULTR_STORAGE_ENDPOINT,
+      region: 'us-east-1',
+      credentials: {
+        accessKeyId: env.VULTR_STORAGE_ACCESS_KEY,
+        secretAccessKey: env.VULTR_STORAGE_SECRET_KEY,
+      },
+      forcePathStyle: true,
+    });
+  }
+
+  return s3;
+}
 
 export const storage = {
   // Upload a floor plan image. key = "floorplans/{jobId}.jpg"
   async uploadImage(key: string, buffer: Buffer, contentType: string): Promise<string> {
-    await s3.send(new PutObjectCommand({
-      Bucket: BUCKET,
+    const env = getEnv();
+    await getS3Client().send(new PutObjectCommand({
+      Bucket: env.VULTR_STORAGE_BUCKET,
       Key: key,
       Body: buffer,
       ContentType: contentType,
       ACL: 'public-read',
     }));
-    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+    return `${env.VULTR_STORAGE_ENDPOINT}/${env.VULTR_STORAGE_BUCKET}/${key}`;
   },
 
   // Upload a scene JSON file. key = "scenes/{sceneId}.json"
   async uploadScene(key: string, sceneData: object): Promise<string> {
+    const env = getEnv();
     const body = JSON.stringify(sceneData, null, 2);
-    await s3.send(new PutObjectCommand({
-      Bucket: BUCKET,
+    await getS3Client().send(new PutObjectCommand({
+      Bucket: env.VULTR_STORAGE_BUCKET,
       Key: key,
       Body: body,
       ContentType: 'application/json',
       ACL: 'public-read',
     }));
-    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+    return `${env.VULTR_STORAGE_ENDPOINT}/${env.VULTR_STORAGE_BUCKET}/${key}`;
   },
 
   // Fetch a scene JSON file and parse it
   async getScene(key: string): Promise<object> {
-    const response = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+    const { VULTR_STORAGE_BUCKET } = getEnv();
+    const response = await getS3Client().send(new GetObjectCommand({ Bucket: VULTR_STORAGE_BUCKET, Key: key }));
     const stream = response.Body as Readable;
     const chunks: Buffer[] = [];
     for await (const chunk of stream) chunks.push(chunk as Buffer);
@@ -495,7 +525,8 @@ export const storage = {
 
   // Get the public URL for any stored object
   getPublicUrl(key: string): string {
-    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+    const env = getEnv();
+    return `${env.VULTR_STORAGE_ENDPOINT}/${env.VULTR_STORAGE_BUCKET}/${key}`;
   }
 };
 ```
@@ -506,15 +537,23 @@ export const storage = {
 
 ```typescript
 import { GoogleGenerativeAI, Part } from '@google/generative-ai';
+import { getEnv } from './env';
 
-const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const model = genai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+let genai: GoogleGenerativeAI | null = null;
+
+function getModel() {
+  if (!genai) {
+    genai = new GoogleGenerativeAI(getEnv().GEMINI_API_KEY);
+  }
+
+  return genai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+}
 
 export async function callGemini(prompt: string, imageParts?: Part[]): Promise<string> {
   const parts: Part[] = [{ text: prompt }];
   if (imageParts) parts.unshift(...imageParts);
 
-  const result = await model.generateContent({ contents: [{ role: 'user', parts }] });
+  const result = await getModel().generateContent({ contents: [{ role: 'user', parts }] });
   const text = result.response.text();
 
   if (!text) throw new Error('Gemini returned empty response');
@@ -808,10 +847,11 @@ export async function runPipeline(jobId: string, floorplanImageUrl: string, useC
 
     // --- Save to Object Storage ---
     const sceneKey = `scenes/${sceneFile.sceneId}.json`;
-    const shareUrl = await storage.uploadScene(sceneKey, sceneFile);
+    await storage.uploadScene(sceneKey, sceneFile);
 
     // --- Save to Database ---
     const sceneId = await db.createScene({
+      sceneId: sceneFile.sceneId,
       jobId,
       sceneStorageKey: sceneKey,
       useCase,
@@ -819,7 +859,7 @@ export async function runPipeline(jobId: string, floorplanImageUrl: string, useC
       floorplanWidth: floorplan.width,
       floorplanDepth: floorplan.depth,
       objectCount: objects.length,
-      shareUrl,
+      shareUrl: `${getEnv().APP_BASE_URL}/scene/${sceneFile.sceneId}`,
     });
 
     await db.updateJobStatus(jobId, 'complete', { sceneId });
@@ -847,6 +887,21 @@ import { db } from '@/lib/db';
 import { runPipeline } from '@/lib/backboard';
 import { v4 as uuidv4 } from 'uuid';
 
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+function getImageExtension(mimeType: string): string {
+  switch (mimeType) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    default:
+      throw new Error(`Unsupported mime type: ${mimeType}`);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -862,19 +917,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Image too large (max 10MB)' }, { status: 400 });
     }
 
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!allowedTypes.includes(file.type)) {
+    if (!ALLOWED_MIME_TYPES.includes(file.type as (typeof ALLOWED_MIME_TYPES)[number])) {
       return NextResponse.json({ error: 'Invalid file type. Use JPG, PNG, or WebP.' }, { status: 400 });
     }
 
     // Upload image to Object Storage
     const jobId = uuidv4();
-    const imageKey = `floorplans/${jobId}.jpg`;
+    const imageKey = `floorplans/${jobId}.${getImageExtension(file.type)}`;
     const imageBuffer = Buffer.from(await file.arrayBuffer());
     const imageUrl = await storage.uploadImage(imageKey, imageBuffer, file.type);
 
     // Create job record
-    await db.createJob(useCase.trim(), imageKey);
+    await db.createJob(jobId, useCase.trim(), imageKey);
 
     // Fire pipeline asynchronously — do NOT await this
     // The HTTP response returns immediately with the jobId
@@ -967,23 +1021,32 @@ Run this script before the demo to pre-generate the BearHacks scene so it loads 
 ```typescript
 import { runPipeline } from '../lib/backboard';
 import { db } from '../lib/db';
+import { getEnv } from '../lib/env';
 import { storage } from '../lib/storage';
 import * as fs from 'fs';
 import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 async function seedDemo() {
   console.log('Seeding BearHacks demo scene...');
 
   const imagePath = path.join(process.cwd(), 'public/demo/bearhacks-floorplan.jpg');
+  if (!fs.existsSync(imagePath)) {
+    throw new Error(
+      'Missing demo asset at public/demo/bearhacks-floorplan.jpg. Add the BearHacks floor plan image before running seed-demo.'
+    );
+  }
   const imageBuffer = fs.readFileSync(imagePath);
 
   // Upload the image
-  const imageKey = 'floorplans/demo-bearhacks.jpg';
+  const jobId = uuidv4();
+  const imageKey = `floorplans/${jobId}.jpg`;
   const imageUrl = await storage.uploadImage(imageKey, imageBuffer, 'image/jpeg');
   console.log('Image uploaded:', imageUrl);
 
   // Create job
-  const jobId = await db.createJob(
+  await db.createJob(
+    jobId,
     'hackathon with hacking stations along the walls, sponsor booths in the center, and a ceremony stage at the front',
     imageKey
   );
@@ -995,11 +1058,17 @@ async function seedDemo() {
   );
 
   const job = await db.getJob(jobId);
+  if (!job?.scene_id) {
+    throw new Error('Seed demo completed without a scene ID.');
+  }
   console.log('Demo scene ready! Scene ID:', job.scene_id);
-  console.log('Share URL:', job.scene_id ? `http://your-domain.com/scene/${job.scene_id}` : 'N/A');
+  console.log('Share URL:', `${getEnv().APP_BASE_URL}/scene/${job.scene_id}`);
 }
 
-seedDemo().catch(console.error);
+seedDemo().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 ```
 
 ---
@@ -1017,7 +1086,6 @@ seedDemo().catch(console.error);
 - `components/UploadForm.tsx`
 - `components/ProgressTracker.tsx`
 - `components/SceneViewer.tsx`
-- `components/ui/`
 
 ---
 
@@ -1557,8 +1625,9 @@ npm install
 
 **Step 6 — Create Environment File:**
 ```bash
+cp /var/www/floorplan-ai/.env.example /var/www/floorplan-ai/.env.local
 nano /var/www/floorplan-ai/.env.local
-# Paste all environment variables from Section 8
+# Fill in the values from Section 8
 ```
 
 **Step 7 — Build the Next.js App:**
@@ -1742,7 +1811,7 @@ Set up a deployment script at `/var/www/deploy.sh`:
 set -e
 cd /var/www/floorplan-ai
 git pull origin main
-npm install --production
+npm install
 npm run build
 pm2 restart floorplan-ai
 echo "Deployment complete at $(date)"
@@ -1788,7 +1857,7 @@ Once Person 1 has the pipeline working and Person 3 has infrastructure live, run
 
 ```bash
 cd /var/www/floorplan-ai
-npx ts-node scripts/seed-demo.ts
+npm run seed-demo
 ```
 
 This generates the BearHacks scene in advance. Write down the Scene ID it outputs. This is your demo URL:
@@ -1873,9 +1942,14 @@ Use QuickTime (Mac) or OBS (Windows/Linux). Export as MP4. Submit as required by
 
 ## 8. Environment Variables
 
-Create a `.env.local` file in the project root. Person 3 provides the Vultr values. Person 1 provides the Gemini API key. All team members need a copy of this file.
+The tracked template is `.env.example` in the project root. Copy it to `.env.local`, then fill in the real values. Person 3 provides the Vultr values. Person 1 provides the Gemini API key. All team members need their own `.env.local`.
 
 ```bash
+# ==========================================
+# APP URL
+# ==========================================
+APP_BASE_URL=http://localhost:3000
+
 # ==========================================
 # GEMINI API
 # ==========================================
@@ -1893,12 +1967,6 @@ VULTR_STORAGE_ENDPOINT=https://ewr1.vultrobjects.com
 VULTR_STORAGE_BUCKET=floorplan-ai-storage
 VULTR_STORAGE_ACCESS_KEY=your_access_key
 VULTR_STORAGE_SECRET_KEY=your_secret_key
-
-# ==========================================
-# APP CONFIG
-# ==========================================
-NEXT_PUBLIC_APP_URL=http://YOUR_VPS_IP_OR_DOMAIN
-NODE_ENV=production
 ```
 
 ---

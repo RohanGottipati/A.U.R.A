@@ -1,18 +1,28 @@
 import { Pool } from 'pg';
+import { getEnv } from './env';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+let pool: Pool | null = null;
+
+function getPool(): Pool {
+  if (!pool) {
+    const { DATABASE_URL } = getEnv();
+    pool = new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+  }
+
+  return pool;
+}
 
 export const db = {
-  query: (text: string, params?: unknown[]) => pool.query(text, params),
+  query: (text: string, params?: unknown[]) => getPool().query(text, params),
 
-  async createJob(useCaseText: string, floorplanStorageKey: string): Promise<string> {
-    const result = await pool.query(
-      `INSERT INTO jobs (use_case, floorplan_storage_key)
-       VALUES ($1, $2) RETURNING id`,
-      [useCaseText, floorplanStorageKey]
+  async createJob(jobId: string, useCaseText: string, floorplanStorageKey: string): Promise<string> {
+    const result = await getPool().query(
+      `INSERT INTO jobs (id, use_case, floorplan_storage_key)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [jobId, useCaseText, floorplanStorageKey]
     );
     return result.rows[0].id;
   },
@@ -31,15 +41,16 @@ export const db = {
     if (extras?.errorMessage) { fields.push(`error_message = $${i++}`); values.push(extras.errorMessage); }
     if (extras?.sceneId)      { fields.push(`scene_id = $${i++}`); values.push(extras.sceneId); }
 
-    await pool.query(`UPDATE jobs SET ${fields.join(', ')} WHERE id = $1`, values);
+    await getPool().query(`UPDATE jobs SET ${fields.join(', ')} WHERE id = $1`, values);
   },
 
   async getJob(jobId: string) {
-    const result = await pool.query('SELECT * FROM jobs WHERE id = $1', [jobId]);
+    const result = await getPool().query('SELECT * FROM jobs WHERE id = $1', [jobId]);
     return result.rows[0] ?? null;
   },
 
   async createScene(params: {
+    sceneId: string;
     jobId: string;
     sceneStorageKey: string;
     useCase: string;
@@ -49,13 +60,13 @@ export const db = {
     objectCount: number;
     shareUrl: string;
   }): Promise<string> {
-    const result = await pool.query(
+    const result = await getPool().query(
       `INSERT INTO scenes
-         (job_id, scene_storage_key, use_case, use_case_category,
+         (id, job_id, scene_storage_key, use_case, use_case_category,
           floorplan_width, floorplan_depth, object_count, share_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
       [
-        params.jobId, params.sceneStorageKey, params.useCase,
+        params.sceneId, params.jobId, params.sceneStorageKey, params.useCase,
         params.useCaseCategory, params.floorplanWidth, params.floorplanDepth,
         params.objectCount, params.shareUrl
       ]
@@ -64,7 +75,7 @@ export const db = {
   },
 
   async getScene(sceneId: string) {
-    const result = await pool.query('SELECT * FROM scenes WHERE id = $1', [sceneId]);
+    const result = await getPool().query('SELECT * FROM scenes WHERE id = $1', [sceneId]);
     return result.rows[0] ?? null;
   }
 };

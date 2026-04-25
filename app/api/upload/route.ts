@@ -4,6 +4,21 @@ import { db } from '@/lib/db';
 import { runPipeline } from '@/lib/backboard';
 import { v4 as uuidv4 } from 'uuid';
 
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+function getImageExtension(mimeType: string): string {
+  switch (mimeType) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    default:
+      throw new Error(`Unsupported mime type: ${mimeType}`);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -18,17 +33,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Image too large (max 10MB)' }, { status: 400 });
     }
 
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!allowedTypes.includes(file.type)) {
+    if (!ALLOWED_MIME_TYPES.includes(file.type as (typeof ALLOWED_MIME_TYPES)[number])) {
       return NextResponse.json({ error: 'Invalid file type. Use JPG, PNG, or WebP.' }, { status: 400 });
     }
 
     const jobId = uuidv4();
-    const imageKey = `floorplans/${jobId}.jpg`;
+    const imageKey = `floorplans/${jobId}.${getImageExtension(file.type)}`;
     const imageBuffer = Buffer.from(await file.arrayBuffer());
     const imageUrl = await storage.uploadImage(imageKey, imageBuffer, file.type);
 
-    await db.createJob(useCase.trim(), imageKey);
+    await db.createJob(jobId, useCase.trim(), imageKey);
 
     // Fire pipeline asynchronously — do NOT await this
     runPipeline(jobId, imageUrl, useCase.trim()).catch(err => {

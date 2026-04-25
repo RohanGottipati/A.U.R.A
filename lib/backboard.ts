@@ -3,6 +3,7 @@ import { runAgent2 } from './agents/agent2-placement';
 import { runAgent3 } from './agents/agent3-assembly';
 import { storage } from './storage';
 import { db } from './db';
+import { getEnv } from './env';
 
 export async function runPipeline(jobId: string, floorplanImageUrl: string, useCase: string): Promise<void> {
   try {
@@ -22,10 +23,11 @@ export async function runPipeline(jobId: string, floorplanImageUrl: string, useC
 
     // --- Save to Object Storage ---
     const sceneKey = `scenes/${sceneFile.sceneId}.json`;
-    const shareUrl = await storage.uploadScene(sceneKey, sceneFile);
+    await storage.uploadScene(sceneKey, sceneFile);
 
     // --- Save to Database ---
     const sceneId = await db.createScene({
+      sceneId: sceneFile.sceneId,
       jobId,
       sceneStorageKey: sceneKey,
       useCase,
@@ -33,7 +35,7 @@ export async function runPipeline(jobId: string, floorplanImageUrl: string, useC
       floorplanWidth: floorplan.width,
       floorplanDepth: floorplan.depth,
       objectCount: objects.length,
-      shareUrl,
+      shareUrl: `${getEnv().APP_BASE_URL}/scene/${sceneFile.sceneId}`,
     });
 
     await db.updateJobStatus(jobId, 'complete', { sceneId });

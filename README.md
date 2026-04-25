@@ -21,17 +21,35 @@ Upload any floor plan image. Describe your use case in plain English. Walk throu
 npm install
 
 # 2. Copy the environment template
-cp .env.local.example .env.local
-# Fill in GEMINI_API_KEY, DATABASE_URL, and Vultr Storage credentials
+cp .env.example .env.local
+# Fill in APP_BASE_URL, GEMINI_API_KEY, DATABASE_URL,
+# VULTR_STORAGE_ENDPOINT, VULTR_STORAGE_BUCKET,
+# VULTR_STORAGE_ACCESS_KEY, and VULTR_STORAGE_SECRET_KEY
 
 # 3. Run the database migration
 psql "$DATABASE_URL" < migrations/002_floorplan_ai_schema.sql
 
-# 4. Start the dev server
+# 4. Validate the setup
+npm run check
+
+# 5. Start the dev server
 npm run dev
 ```
 
 App runs on [http://localhost:3000](http://localhost:3000).
+
+## Environment
+
+The root `.env.example` is the only active environment template for FloorPlan AI.
+
+Required variables:
+- `APP_BASE_URL`
+- `GEMINI_API_KEY`
+- `DATABASE_URL`
+- `VULTR_STORAGE_ENDPOINT`
+- `VULTR_STORAGE_BUCKET`
+- `VULTR_STORAGE_ACCESS_KEY`
+- `VULTR_STORAGE_SECRET_KEY`
 
 ## Project Structure
 
@@ -52,6 +70,7 @@ components/
   ProgressTracker.tsx         # Pipeline step progress UI
   SceneViewer.tsx             # Wrapper for Three.js + controls UI
 lib/
+  env.ts                      # Validated runtime environment access
   gemini.ts                   # Gemini API client
   backboard.ts                # Backboard agent orchestration
   storage.ts                  # Vultr Object Storage client
@@ -62,10 +81,16 @@ lib/
     agent3-assembly.ts        # Agent 3: scene assembly
 types/
   scene.ts                    # All TypeScript interfaces (the schema)
+public/
+  demo/
+    example-scene.json        # Checked-in sample scene for frontend work
 scripts/
   seed-demo.ts                # Pre-generates the BearHacks demo scene
 migrations/
   002_floorplan_ai_schema.sql # PostgreSQL schema
+legacy/
+  aura-backend/               # Archived A.U.R.A backend (inactive)
+  aura-frontend/              # Archived A.U.R.A frontend (inactive)
 ```
 
 ## Scripts
@@ -75,6 +100,8 @@ migrations/
 | `npm run dev` | Start the development server |
 | `npm run build` | Build for production |
 | `npm run lint` | Run ESLint |
+| `npm run typecheck` | Run TypeScript type checking |
+| `npm run check` | Run lint + typecheck |
 | `npm run seed-demo` | Pre-generate the BearHacks demo scene |
 
 ## API Endpoints
@@ -86,4 +113,4 @@ migrations/
 
 ## Legacy Files
 
-The `frontend/` and `backend/` directories contain the original A.U.R.A codebase. Files in those directories are marked as `DEPRECATED` and are not used by FloorPlan AI. The new single-app structure lives at the root level.
+The archived A.U.R.A codebase lives under `legacy/`. It is kept for reference only and is not part of the active FloorPlan AI setup, env flow, or tooling.
