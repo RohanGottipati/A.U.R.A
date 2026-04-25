@@ -1,33 +1,17 @@
-/**
- * pipeline.ts – Skeleton for the AURA redesign pipeline.
- *
- * The full pipeline will:
- *   1. Clone / fetch the target repo (Octokit)
- *   2. Identify UI files (React components, CSS, etc.)
- *   3. Screenshot pages (Puppeteer / Playwright – Phase 2)
- *   4. Send screenshots to Vision model for analysis (Phase 2)
- *   5. Generate redesigned code with OpenAI / Gemini agents
- *   6. Upload assets to Vultr Object Storage (S3-compatible)
- *   7. Open a PR with the changes (Phase 3)
- *
- * For Phase 1 this file only exports the step definitions and a no-op
- * runner so the rest of the app can reference it without errors.
- */
-
 import type { PipelineStep } from "@/lib/types";
 
-/** Ordered list of pipeline steps. */
+type PersistedJobStatus = "running" | "completed" | "failed";
+
+const STEP_DELAY_MS = 750;
+
+/** Ordered list of pipeline steps used by the current mock UI. */
 export const PIPELINE_STEPS: readonly string[] = [
-  "clone_repo",
-  "identify_ui_files",
-  "screenshot_pages",
-  "analyze_screenshots",
-  "generate_redesign",
-  "upload_assets",
-  "open_pr",
+  "Cloning repository",
+  "Analyzing codebase",
+  "Generating design brief",
+  "Redesigning UI",
 ] as const;
 
-/** Build the initial steps array for a new job. */
 export function buildInitialSteps(): PipelineStep[] {
   return PIPELINE_STEPS.map((name) => ({
     name,
@@ -35,17 +19,79 @@ export function buildInitialSteps(): PipelineStep[] {
   }));
 }
 
-/**
- * Run the full pipeline for a given job.
- *
- * TODO (Phase 2+): Implement each step. For now this is a placeholder
- * that immediately returns so the dashboard can render progress UI.
- */
-export async function runPipeline(_jobId: string): Promise<void> {
-  // Person B / C / D: plug your agent logic here.
-  // Example:
-  //   await cloneRepo(jobId);
-  //   await identifyUIFiles(jobId);
-  //   ...
-  console.log(`[pipeline] runPipeline called for job ${_jobId} – no-op in Phase 1`);
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function updateStatus(
+  jobId: string,
+  status: PersistedJobStatus,
+  currentStep: string,
+): Promise<void> {
+  try {
+    const prismaModule = (await import("@/lib/prisma").catch(() => null)) as
+      | {
+          prisma?: {
+            job?: {
+              update?: (args: {
+                where: { id: string };
+                data: { status: PersistedJobStatus; currentStep: string };
+              }) => Promise<unknown>;
+            };
+          };
+        }
+      | null;
+
+    const prismaClient = prismaModule?.prisma;
+
+    if (!prismaClient?.job?.update) {
+      return;
+    }
+
+    await prismaClient.job.update({
+      where: { id: jobId },
+      data: {
+        status,
+        currentStep,
+      },
+    });
+  } catch (error) {
+    console.warn("[pipeline] Could not update job status.", {
+      jobId,
+      status,
+      currentStep,
+      error,
+    });
+  }
+}
+
+export async function runPipeline(
+  jobId: string,
+  repoFullName: string,
+  userNote: string,
+  githubAccessToken: string,
+): Promise<void> {
+  let currentStep = "Starting pipeline";
+
+  try {
+    console.info("[pipeline] Starting Phase 1 pipeline.", {
+      jobId,
+      repoFullName,
+      hasUserNote: userNote.trim().length > 0,
+      hasGithubAccessToken: githubAccessToken.trim().length > 0,
+    });
+
+    for (const step of PIPELINE_STEPS) {
+      currentStep = step;
+      await updateStatus(jobId, "running", step);
+      await sleep(STEP_DELAY_MS);
+    }
+
+    await updateStatus(jobId, "completed", "Done");
+  } catch (error) {
+    await updateStatus(jobId, "failed", currentStep);
+    throw error;
+  }
 }
