@@ -1,3 +1,4 @@
+// DEPRECATED - FloorPlan AI does not use NextAuth; no auth required
 import NextAuth from "next-auth";
 
 import { authOptions } from "@/lib/auth";

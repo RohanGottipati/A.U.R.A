@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /lib/db.ts (FloorPlan AI uses raw pg client)
 import { PrismaClient } from "@prisma/client";
 
 const prismaClientSingleton = () =>

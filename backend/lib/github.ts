@@ -1,3 +1,4 @@
+// DEPRECATED - FloorPlan AI does not use GitHub integration
 import { Octokit } from "@octokit/rest";
 
 import { prisma } from "@/lib/prisma";

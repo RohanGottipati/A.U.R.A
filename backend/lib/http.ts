@@ -1,3 +1,4 @@
+// DEPRECATED - FloorPlan AI uses a single Next.js app; CORS helpers not needed
 import { NextResponse } from "next/server";
 
 const DEFAULT_ALLOWED_ORIGIN = "http://localhost:3000";

@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /app/upload/page.tsx (FloorPlan AI upload page)
 import Link from "next/link";
 import { mockRepos } from "@/lib/mock-data";
 

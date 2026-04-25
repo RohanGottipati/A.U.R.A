@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /app/api/job/[jobId]/route.ts (FloorPlan AI job status)
 import { requireUser } from "@/lib/auth";
 import { jsonWithCors, optionsResponse } from "@/lib/http";
 import { toJobListItemResponse } from "@/lib/jobs";

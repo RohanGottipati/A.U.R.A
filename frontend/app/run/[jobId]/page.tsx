@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /app/processing/[jobId]/page.tsx (FloorPlan AI processing page)
 import Link from "next/link";
 import { pipelineSteps } from "@/lib/mock-data";
 

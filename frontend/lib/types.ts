@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /types/scene.ts (FloorPlan AI central schema)
 export type JobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 
 export interface PipelineStep {

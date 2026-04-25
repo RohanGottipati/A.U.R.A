@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by direct fetch calls in FloorPlan AI components
 import type { JobResponse, JobsResponse } from "@/lib/types";
 
 const DEFAULT_API_BASE_URL = "http://localhost:3001";
