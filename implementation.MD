@@ -1,2108 +1,1990 @@
-# DesignPR — Full Implementation Guide (Complete)
+# FloorPlan AI — Full Implementation Guide
 
-> **What we're building:** A web app where users connect a GitHub repo, and an AI agent pipeline analyzes the existing UI, redesigns it with real design taste, and opens a pull request with before/after screenshots — automatically.
+> **Purpose:** This document is the single source of truth for building FloorPlan AI at BearHacks. Every feature is described in enough detail for AI agents (Devin, Codex, Amp, Factory AI, Claude) to implement without ambiguity. Read this entire document before writing a single line of code.
 
 ---
 
 ## Table of Contents
 
-1. [Tech Stack](#tech-stack)
-2. [Project Structure](#project-structure)
-3. [Environment Variables](#environment-variables)
-4. [Installation & Setup](#installation--setup)
-5. [TypeScript Types](#typescript-types)
-6. [Frontend App](#frontend-app)
-7. [GitHub OAuth + API](#github-oauth--api)
-8. [Vultr Infrastructure](#vultr-infrastructure)
-9. [Google Cloud Vision Integration](#google-cloud-vision-integration)
-10. [Backboard Agent Pipeline](#backboard-agent-pipeline)
-11. [The Agent Prompts](#the-agent-prompts)
-12. [Playwright Screenshot System](#playwright-screenshot-system)
-13. [Deployment Helpers](#deployment-helpers)
-14. [PR Creation](#pr-creation)
-15. [Gemma 4 Integration](#gemma-4-integration)
-16. [Database Schema](#database-schema)
-17. [API Routes](#api-routes)
-18. [Error Handling & Retry Utilities](#error-handling--retry-utilities)
-19. [Demo Flow](#demo-flow)
-20. [Critical Notes](#critical-notes)
+1. [Project Overview](#1-project-overview)
+2. [The Central JSON Schema](#2-the-central-json-schema)
+3. [Repository Structure](#3-repository-structure)
+4. [Person 1 — Backend & AI Pipeline](#4-person-1--backend--ai-pipeline)
+5. [Person 2 — Frontend, UI & Three.js](#5-person-2--frontend-ui--threejs)
+6. [Person 3 — Vultr Infrastructure](#6-person-3--vultr-infrastructure)
+7. [Person 4 — Demo & Polish](#7-person-4--demo--polish)
+8. [Environment Variables](#8-environment-variables)
+9. [Build Order & Milestones](#9-build-order--milestones)
+10. [Inter-Person Dependencies](#10-inter-person-dependencies)
 
 ---
 
-## Tech Stack
+## 1. Project Overview
 
-- **Frontend:** Next.js 14 (App Router), Tailwind CSS, Framer Motion
-- **Backend:** Next.js API Routes (serverless)
-- **Database:** Vultr Managed PostgreSQL via Prisma ORM
-- **Object Storage:** Vultr Object Storage (S3-compatible)
-- **Compute:** Vultr VPS running Playwright headless browser service
-- **Agent Orchestration:** Backboard
-- **AI Models:** GPT-4o (redesign + critique + revision), Gemma 4 via Google Gemini API (analyze + brief)
-- **Vision:** Google Cloud Vision API
-- **Auth:** GitHub OAuth (NextAuth.js)
-- **GitHub API:** Octokit
-- **Screenshots:** Playwright (running on Vultr compute instance)
+### What We Are Building
 
----
+FloorPlan AI is a web application that takes any floor plan image and a plain-English description of a use case, and generates a fully configured, walkable 3D visualization of that space in seconds. No technical expertise required. Upload a floor plan, type a sentence, walk through your configured space.
 
-## Project Structure
+### Use Cases
 
-```
-designpr/
-├── app/
-│   ├── page.tsx                    # Landing page
-│   ├── dashboard/
-│   │   └── page.tsx                # User dashboard — repo list + job history
-│   ├── run/
-│   │   └── [jobId]/page.tsx        # Live job progress page
-│   └── api/
-│       ├── auth/[...nextauth]/     # NextAuth GitHub OAuth
-│       ├── repos/route.ts          # List user GitHub repos
-│       ├── jobs/
-│       │   ├── create/route.ts     # Start a new DesignPR job
-│       │   └── [jobId]/route.ts    # Get job status
-│       ├── screenshot/route.ts     # Trigger Playwright on Vultr compute
-│       └── webhook/backboard/      # Backboard pipeline callbacks
-├── lib/
-│   ├── types.ts                    # All shared TypeScript interfaces
-│   ├── prisma.ts                   # Prisma client
-│   ├── vultr-storage.ts            # Vultr Object Storage client
-│   ├── github.ts                   # Octokit helpers (fetch files + open PR)
-│   ├── vision.ts                   # Google Cloud Vision helpers
-│   ├── backboard.ts                # Backboard client + pipeline definitions
-│   ├── openai.ts                   # OpenAI GPT-4o helper
-│   ├── gemma.ts                    # Gemma 4 via Google Gemini API helper
-│   ├── screenshot.ts               # Next.js-side screenshot trigger
-│   ├── deploy-helper.ts            # Vercel preview deploy helpers
-│   ├── pipeline.ts                 # Full agent pipeline orchestrator
-│   ├── retry.ts                    # Retry + error handling utilities
-│   └── agents/
-│       ├── analyzer.ts             # Agent 1: repo analysis
-│       ├── brief.ts                # Agent 2: design brief generation
-│       ├── redesign.ts             # Agent 3: UI redesign
-│       ├── critic.ts               # Agent 4: critique loop
-│       └── reviser.ts              # Agent 5: final revision
-├── prisma/
-│   └── schema.prisma
-├── types/
-│   └── next-auth.d.ts              # NextAuth session type augmentation
-├── playwright-service/             # Separate Node service on Vultr VPS
-│   ├── package.json
-│   ├── index.ts
-│   └── screenshot.ts
-├── next.config.js
-├── package.json
-└── .env.local
-```
+- **Hackathon organizer:** "Hacking stations along walls, sponsor booths in center, ceremony stage at front"
+- **Event planner:** "200 person gala with round tables, a dance floor, and a bar on the east wall"
+- **Factory manager:** "Assembly line with 3 workstations, forklift path down center, storage in back"
+- **Office designer:** "Open plan with 40 desks, 3 meeting rooms, and a lounge near the entrance"
+
+### The Demo
+
+Upload the BearHacks SSU Atrium floor plan. Type "hackathon with hacking stations along the walls, sponsor booths in the center, and a ceremony stage at the front." The room the judges are sitting in appears in 3D, configured exactly as the hackathon is set up around them.
+
+### Tech Stack Summary
+
+| Layer | Technology |
+|---|---|
+| Frontend Framework | Next.js 14 (App Router) |
+| 3D Rendering | Three.js |
+| AI Vision + Language | Gemini 2.0 Flash API |
+| Agent Orchestration | Backboard (3 agents) |
+| Backend Runtime | Node.js on Vultr VPS |
+| Database | Vultr Managed PostgreSQL |
+| File Storage | Vultr Object Storage (S3-compatible) |
+| Network Security | Vultr Firewall |
+| Traffic Distribution | Vultr Load Balancer |
+| Language | TypeScript throughout |
 
 ---
 
-## Environment Variables
+## 2. The Central JSON Schema
 
-```bash
-# NextAuth
-NEXTAUTH_SECRET=your_secret_here_generate_with_openssl_rand_base64_32
-NEXTAUTH_URL=https://your-domain.com
+**This schema is the single most important thing in the entire project. Every person builds against this contract. Define it first, touch it last.**
 
-# GitHub OAuth App (create at github.com/settings/developers)
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
+This is the data format that:
+- Gemini produces as output
+- Backboard passes between agents
+- Three.js consumes to render the scene
+- PostgreSQL stores as metadata
+- Object Storage saves as the scene file
 
-# GitHub Personal Access Token (for opening PRs as the app)
-GITHUB_PAT=
+### Full Schema Definition
 
-# OpenAI (GPT-4o — redesign, critique, revision agents)
-OPENAI_API_KEY=
+```typescript
+// types/scene.ts — shared across the entire codebase
 
-# Google Gemini (for Gemma 4)
-GOOGLE_GEMINI_API_KEY=
+export interface Wall {
+  x1: number;  // start x coordinate in meters
+  y1: number;  // start y coordinate in meters
+  x2: number;  // end x coordinate in meters
+  y2: number;  // end y coordinate in meters
+  height: number; // wall height in meters, default 3.0
+}
 
-# Google Cloud Vision
-GOOGLE_CLOUD_VISION_API_KEY=
-GOOGLE_APPLICATION_CREDENTIALS=./gcp-service-account.json
+export interface Room {
+  id: string;        // unique identifier e.g. "room_1"
+  name: string;      // human readable e.g. "Main Hall"
+  x: number;         // top-left x coordinate in meters
+  y: number;         // top-left y coordinate in meters
+  width: number;     // room width in meters
+  height: number;    // room depth in meters
+  type: RoomType;    // classification
+}
 
-# Vultr Managed PostgreSQL
-DATABASE_URL=postgresql://user:pass@host:5432/designpr?sslmode=require
+export type RoomType =
+  | "main_hall"
+  | "corridor"
+  | "bathroom"
+  | "storage"
+  | "kitchen"
+  | "office"
+  | "entrance"
+  | "unknown";
 
-# Vultr Object Storage (S3-compatible)
-VULTR_STORAGE_ENDPOINT=https://ewr1.vultrobjects.com
-VULTR_STORAGE_ACCESS_KEY=
-VULTR_STORAGE_SECRET_KEY=
-VULTR_STORAGE_BUCKET=designpr-screenshots
+export interface SceneObject {
+  id: string;          // unique identifier e.g. "obj_1"
+  type: ObjectType;    // determines shape and color
+  roomId: string;      // which room this object belongs to
+  x: number;           // center x coordinate in meters
+  y: number;           // center y coordinate in meters (depth)
+  z: number;           // height off floor in meters, usually 0
+  width: number;       // x-axis size in meters
+  depth: number;       // y-axis size in meters
+  height: number;      // z-axis size in meters
+  rotation: number;    // rotation in degrees around y-axis (0-360)
+  label: string;       // display label shown in 3D above object
+  color?: string;      // optional hex override e.g. "#FF5733"
+}
 
-# Playwright Service (running on Vultr compute)
-PLAYWRIGHT_SERVICE_URL=http://your-vultr-ip:3001
-PLAYWRIGHT_SERVICE_SECRET=your_shared_secret_min_32_chars
+export type ObjectType =
+  | "table"           // flat rectangular surface
+  | "chair"           // small cube
+  | "stage"           // raised rectangular platform
+  | "booth"           // tall rectangular structure
+  | "desk"            // office desk
+  | "podium"          // single speaking podium
+  | "screen"          // vertical flat panel
+  | "workstation"     // industrial work surface
+  | "shelf"           // storage shelf unit
+  | "counter"         // counter/bar surface
+  | "equipment"       // generic industrial equipment block
+  | "plant"           // decorative cylinder
+  | "divider"         // room divider panel
+  | "entrance_marker";// arrow pointing to entrance
 
-# Backboard
-BACKBOARD_API_KEY=
-BACKBOARD_ORG_ID=
+export interface FloorPlan {
+  width: number;       // total floor plan width in meters
+  depth: number;       // total floor plan depth in meters
+  rooms: Room[];
+  walls: Wall[];
+  scale: number;       // pixels per meter ratio from original image
+  confidence: number;  // 0-1, how confident Gemini was in extraction
+  notes: string;       // any extraction caveats from Gemini
+}
 
-# Vercel (for preview deploys used in screenshots)
-VERCEL_TOKEN=
-VERCEL_TEAM_ID=      # optional, only if using a Vercel team
+export interface Configuration {
+  useCase: string;           // the raw user input text
+  useCaseCategory: UseCaseCategory;
+  objects: SceneObject[];
+  placementNotes: string;    // reasoning from Agent 2
+}
+
+export type UseCaseCategory =
+  | "event"
+  | "hackathon"
+  | "office"
+  | "factory"
+  | "classroom"
+  | "retail"
+  | "other";
+
+export interface SceneFile {
+  version: "1.0";
+  sceneId: string;           // uuid
+  createdAt: string;         // ISO timestamp
+  floorplan: FloorPlan;
+  configuration: Configuration;
+}
 ```
 
----
-
-## Installation & Setup
-
-### 1. Clone and install dependencies
-
-```bash
-git clone https://github.com/your-org/designpr.git
-cd designpr
-npm install
-```
-
-### 2. Main `package.json`
+### Example Scene File (BearHacks Demo)
 
 ```json
 {
-  "name": "designpr",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio"
-  },
-  "dependencies": {
-    "@auth/prisma-adapter": "^1.6.0",
-    "@aws-sdk/client-s3": "^3.600.0",
-    "@google-cloud/vision": "^4.3.0",
-    "@octokit/rest": "^20.1.1",
-    "@prisma/client": "^5.16.0",
-    "framer-motion": "^11.2.0",
-    "next": "14.2.5",
-    "next-auth": "^4.24.7",
-    "openai": "^4.52.0",
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.14.0",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
-    "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.38",
-    "prisma": "^5.16.0",
-    "tailwindcss": "^3.4.4",
-    "typescript": "^5.5.0"
-  }
-}
-```
-
-### 3. Database setup
-
-```bash
-# Generate Prisma client
-npx prisma generate
-
-# Push schema to Vultr PostgreSQL (dev / first run)
-npx prisma db push
-
-# Or run migrations (production)
-npx prisma migrate dev --name init
-npx prisma migrate deploy   # in CI/CD
-```
-
-### 4. `next.config.js`
-
-```js
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  images: {
-    remotePatterns: [
+  "version": "1.0",
+  "sceneId": "550e8400-e29b-41d4-a716-446655440000",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "floorplan": {
+    "width": 40,
+    "depth": 30,
+    "rooms": [
       {
-        protocol: "https",
-        hostname: "ewr1.vultrobjects.com",
-      },
-      {
-        protocol: "https",
-        hostname: "avatars.githubusercontent.com",
-      },
+        "id": "room_1",
+        "name": "SSU Atrium",
+        "x": 0,
+        "y": 0,
+        "width": 40,
+        "height": 30,
+        "type": "main_hall"
+      }
     ],
+    "walls": [
+      { "x1": 0, "y1": 0, "x2": 40, "y2": 0, "height": 4 },
+      { "x1": 40, "y1": 0, "x2": 40, "y2": 30, "height": 4 },
+      { "x1": 40, "y1": 30, "x2": 0, "y2": 30, "height": 4 },
+      { "x1": 0, "y1": 30, "x2": 0, "y2": 0, "height": 4 }
+    ],
+    "scale": 10,
+    "confidence": 0.92,
+    "notes": "Large open atrium detected. Two entrance points on south wall."
   },
-  // Needed so Prisma can run in Next.js API routes
-  experimental: {
-    serverComponentsExternalPackages: ["@prisma/client"],
-  },
-}
-
-module.exports = nextConfig
-```
-
-### 5. NextAuth session type augmentation
-
-```typescript
-// types/next-auth.d.ts
-import "next-auth"
-import "next-auth/jwt"
-
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string
-      name?: string | null
-      email?: string | null
-      image?: string | null
-      githubAccessToken?: string   // added so pipeline can use it
-    }
-  }
-}
-
-declare module "next-auth/jwt" {
-  interface JWT {
-    id?: string
-    githubAccessToken?: string
-  }
-}
-```
-
----
-
-## TypeScript Types
-
-Define all shared interfaces in one place. Import from here everywhere.
-
-```typescript
-// lib/types.ts
-
-// ── Repo / files ──────────────────────────────────────────────────────────
-
-export interface RepoFile {
-  path: string
-  content: string
-  encoding: "utf-8" | "base64"
-  size: number
-}
-
-// ── Vision ────────────────────────────────────────────────────────────────
-
-export interface DominantColor {
-  color?: { red?: number; green?: number; blue?: number; alpha?: number }
-  score?: number
-  pixelFraction?: number
-}
-
-export interface DetectedObject {
-  name?: string
-  score?: number
-  boundingPoly?: unknown
-}
-
-export interface VisionAnalysis {
-  labels: string[]
-  text: string[]
-  colors: DominantColor[]
-  objects: DetectedObject[]
-  webEntities: string[]
-  pageType: string
-}
-
-// ── Agent I/O ─────────────────────────────────────────────────────────────
-
-export interface RepoAnalysis {
-  framework: "next.js" | "react" | "vue" | "html" | string
-  stylingApproach: "tailwind" | "css-modules" | "styled-components" | "plain-css" | string
-  uiLibrary: "shadcn" | "mui" | "chakra" | "none" | string
-  pages: Array<{ path: string; file: string; description: string }>
-  components: Array<{ name: string; file: string; type: "layout" | "ui" | "page" }>
-  uiFiles: string[]
-  hasAnimations: boolean
-  hasCustomStyling: boolean
-  vibeCodedIndicators: string[]
-}
-
-export interface DesignBrief {
-  appType: string
-  targetAudience: string
-  tone: string
-  colorDirection: string
-  typographyDirection: string
-  layoutPrinciples: string[]
-  animationStyle: string
-  keyChange: string
-  avoidPatterns: string[]
-  audience: string
-  summary: string
-  changes: Array<{ file: string; description: string }>
-}
-
-export interface FileChange {
-  path: string
-  content: string
-}
-
-export interface CritiqueResult {
-  passedReview: boolean
-  score: number
-  issues: Array<{ file: string; issue: string; fix: string }>
-  positives: string[]
-}
-
-// ── Screenshots ───────────────────────────────────────────────────────────
-
-export interface ScreenshotResult {
-  name: string
-  buffer: Buffer
-}
-
-export interface ScreenshotRef {
-  url: string
-  pageName: string
-}
-
-// ── GitHub PR ─────────────────────────────────────────────────────────────
-
-export interface OpenPRParams {
-  accessToken: string
-  owner: string
-  repo: string
-  branchName: string
-  beforeScreenshots: ScreenshotRef[]
-  afterScreenshots: ScreenshotRef[]
-  designBrief: DesignBrief
-  changes: FileChange[]
-}
-```
-
----
-
-## Frontend App
-
-### Landing Page (`app/page.tsx`)
-
-The landing page must look STUNNING — this is the Best UI/UX prize entry. Do not use generic AI aesthetics.
-
-Design direction: Dark background, editorial typography, dramatic scroll animations. Think Linear meets Vercel but with more personality.
-
-Key sections:
-1. **Hero** — Headline, subheading, "Connect GitHub" CTA button. Full viewport height. Animated headline on load.
-2. **Before/After Demo** — Interactive slider showing a vibe coded app vs the DesignPR output. This is the most important section.
-3. **How It Works** — Three steps with animated icons. Keep it clean.
-4. **Footer** — Minimal.
-
-Implementation requirements:
-- Use Framer Motion for all animations
-- Hero headline should animate in word by word on page load
-- Before/after slider should be a draggable divider (build this custom, not a library)
-- Scroll-triggered reveal on every section
-- Color palette: near-black background (#0a0a0a), white text, single accent color (pick something unexpected — not blue, not purple)
-- Typography: Use a distinctive display font from Google Fonts for headlines (options: Playfair Display, Syne, Cabinet Grotesk, Clash Display). Body in a clean geometric sans.
-- NO default Shadcn components visible anywhere on this page
-
-```tsx
-// app/page.tsx — structure outline
-// 1. Import Framer Motion: { motion, useScroll, useTransform, AnimatePresence }
-// 2. Hero with staggered word animation on headline
-// 3. BeforeAfterSlider custom component
-// 4. HowItWorks with scroll-triggered step reveals
-// 5. CTA section
-```
-
-### Dashboard (`app/dashboard/page.tsx`)
-
-After GitHub OAuth, user lands here.
-
-Sections:
-- **Connected repos** — Card grid of their GitHub repos with a "Run DesignPR" button on each
-- **Job history** — Table of past runs with status, before/after thumbnails, link to PR
-- **Active job** — If a job is running, show a live progress indicator with agent step names
-
-The repo cards should show: repo name, language, last updated, star count, and a "Run DesignPR →" button. On click, open a modal asking for an optional note ("Describe your app in one sentence — helps the agent understand context").
-
-### Job Progress Page (`app/run/[jobId]/page.tsx`)
-
-Live polling page showing agent pipeline progress. Poll `/api/jobs/[jobId]` every 2 seconds.
-
-Show:
-- Current agent step with animated spinner
-- Completed steps with checkmarks
-- Screenshot thumbnails as they're captured
-- Final before/after comparison when done
-- Link to the opened PR
-
-Agent steps to display:
-1. Cloning repository...
-2. Capturing current UI screenshots...
-3. Analyzing with Google Cloud Vision...
-4. Generating design brief...
-5. Redesigning UI components...
-6. Rendering redesigned output...
-7. Running design critique...
-8. Applying revisions...
-9. Opening pull request...
-10. Done! ✓
-
----
-
-## GitHub OAuth + API
-
-### NextAuth Setup (`app/api/auth/[...nextauth]/route.ts`)
-
-```typescript
-import NextAuth, { type AuthOptions } from "next-auth"
-import GithubProvider from "next-auth/providers/github"
-import { PrismaAdapter } from "@auth/prisma-adapter"
-import { prisma } from "@/lib/prisma"
-
-export const authOptions: AuthOptions = {
-  adapter: PrismaAdapter(prisma),
-  providers: [
-    GithubProvider({
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          scope: "read:user user:email repo",
-        },
+  "configuration": {
+    "useCase": "hackathon with hacking stations along the walls, sponsor booths in the center, and a ceremony stage at the front",
+    "useCaseCategory": "hackathon",
+    "objects": [
+      {
+        "id": "obj_1",
+        "type": "table",
+        "roomId": "room_1",
+        "x": 3,
+        "y": 5,
+        "z": 0,
+        "width": 2,
+        "depth": 1,
+        "height": 0.75,
+        "rotation": 0,
+        "label": "Hacking Station 1"
       },
-    }),
-  ],
-  callbacks: {
-    // Expose user id and GitHub access token on the session object
-    async session({ session, user }) {
-      session.user.id = user.id
+      {
+        "id": "obj_2",
+        "type": "stage",
+        "roomId": "room_1",
+        "x": 20,
+        "y": 2,
+        "z": 0,
+        "width": 10,
+        "depth": 4,
+        "height": 0.5,
+        "rotation": 0,
+        "label": "Ceremony Stage"
+      },
+      {
+        "id": "obj_3",
+        "type": "booth",
+        "roomId": "room_1",
+        "x": 15,
+        "y": 15,
+        "z": 0,
+        "width": 2,
+        "depth": 2,
+        "height": 2,
+        "rotation": 0,
+        "label": "Sponsor Booth 1"
+      }
+    ],
+    "placementNotes": "Hacking stations placed along north, east, and west walls. Sponsor booths arranged in 2x3 grid in center of room. Ceremony stage placed against north wall with clear sightlines from all positions."
+  }
+}
+```
 
-      // Look up the stored GitHub access token for this user
-      const account = await prisma.account.findFirst({
-        where: { userId: user.id, provider: "github" },
-        select: { access_token: true },
-      })
-      session.user.githubAccessToken = account?.access_token ?? undefined
+---
 
-      return session
-    },
+## 3. Repository Structure
+
+```
+floorplan-ai/
+├── app/                          # Next.js App Router
+│   ├── page.tsx                  # Landing page
+│   ├── upload/
+│   │   └── page.tsx              # Upload + use case input page
+│   ├── processing/
+│   │   └── [jobId]/
+│   │       └── page.tsx          # Real-time pipeline progress page
+│   ├── scene/
+│   │   └── [sceneId]/
+│   │       └── page.tsx          # 3D viewer page
+│   └── api/
+│       ├── upload/
+│       │   └── route.ts          # POST: receive floor plan + use case
+│       ├── job/
+│       │   └── [jobId]/
+│       │       └── route.ts      # GET: poll job status
+│       └── scene/
+│           └── [sceneId]/
+│               └── route.ts      # GET: fetch scene JSON
+├── components/
+│   ├── ThreeScene.tsx            # Main Three.js component
+│   ├── UploadForm.tsx            # Floor plan upload + use case form
+│   ├── ProgressTracker.tsx       # Pipeline step progress UI
+│   ├── SceneViewer.tsx           # Wrapper for Three.js + controls UI
+│   └── ui/                       # Shared UI components
+├── lib/
+│   ├── gemini.ts                 # Gemini API client
+│   ├── backboard.ts              # Backboard agent orchestration
+│   ├── storage.ts                # Vultr Object Storage client
+│   ├── db.ts                     # PostgreSQL client
+│   └── agents/
+│       ├── agent1-geometry.ts    # Agent 1: floor plan extraction
+│       ├── agent2-placement.ts   # Agent 2: object placement
+│       └── agent3-assembly.ts    # Agent 3: scene assembly
+├── types/
+│   └── scene.ts                  # All TypeScript interfaces (the schema)
+├── public/
+│   └── demo/
+│       └── bearhacks-floorplan.jpg  # The BearHacks demo floor plan
+├── scripts/
+│   └── seed-demo.ts              # Pre-generates the BearHacks demo scene
+├── .env.local                    # All environment variables
+└── README.md
+```
+
+---
+
+## 4. Person 1 — Backend & AI Pipeline
+
+**Your responsibility:** Everything that happens on the server after the floor plan is uploaded. The Gemini API calls, the Backboard agents, the pipeline orchestration, the database writes, and the API routes that the frontend calls.
+
+**You own these files:**
+- `lib/gemini.ts`
+- `lib/backboard.ts`
+- `lib/db.ts`
+- `lib/agents/agent1-geometry.ts`
+- `lib/agents/agent2-placement.ts`
+- `lib/agents/agent3-assembly.ts`
+- `app/api/upload/route.ts`
+- `app/api/job/[jobId]/route.ts`
+- `app/api/scene/[sceneId]/route.ts`
+- `types/scene.ts`
+
+---
+
+### 4.1 Database Setup
+
+Run these SQL commands to create the schema in Vultr PostgreSQL. Person 3 will give you the connection string.
+
+```sql
+-- Jobs table: tracks pipeline execution state
+CREATE TABLE jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  status TEXT NOT NULL DEFAULT 'pending',
+    -- pending | agent1_running | agent1_done | agent2_running
+    -- agent2_done | agent3_running | complete | failed
+  use_case TEXT NOT NULL,
+  floorplan_storage_key TEXT NOT NULL,
+    -- the key in Vultr Object Storage where the image is saved
+  scene_id UUID REFERENCES scenes(id),
+  error_message TEXT,
+  agent1_output JSONB,
+    -- stores FloorPlan object from Agent 1 output
+  agent2_output JSONB
+    -- stores SceneObject[] array from Agent 2 output
+);
+
+-- Scenes table: stores completed scene metadata
+CREATE TABLE scenes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  job_id UUID REFERENCES jobs(id),
+  scene_storage_key TEXT NOT NULL,
+    -- the key in Vultr Object Storage where the scene JSON is saved
+  use_case TEXT NOT NULL,
+  use_case_category TEXT NOT NULL,
+  floorplan_width NUMERIC,
+  floorplan_depth NUMERIC,
+  object_count INTEGER,
+  share_url TEXT NOT NULL
+    -- the full public URL to access this scene
+);
+
+-- Index for fast job polling
+CREATE INDEX idx_jobs_status ON jobs(status);
+CREATE INDEX idx_jobs_created ON jobs(created_at DESC);
+```
+
+---
+
+### 4.2 Database Client (`lib/db.ts`)
+
+```typescript
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+export const db = {
+  query: (text: string, params?: unknown[]) => pool.query(text, params),
+
+  async createJob(useCaseText: string, floorplanStorageKey: string): Promise<string> {
+    const result = await pool.query(
+      `INSERT INTO jobs (use_case, floorplan_storage_key)
+       VALUES ($1, $2) RETURNING id`,
+      [useCaseText, floorplanStorageKey]
+    );
+    return result.rows[0].id;
   },
-  pages: {
-    signIn: "/",   // redirect unauthenticated users to landing page
+
+  async updateJobStatus(
+    jobId: string,
+    status: string,
+    extras?: { agent1Output?: object; agent2Output?: object; errorMessage?: string; sceneId?: string }
+  ): Promise<void> {
+    const fields: string[] = ['status = $2', 'updated_at = NOW()'];
+    const values: unknown[] = [jobId, status];
+    let i = 3;
+
+    if (extras?.agent1Output) { fields.push(`agent1_output = $${i++}`); values.push(JSON.stringify(extras.agent1Output)); }
+    if (extras?.agent2Output) { fields.push(`agent2_output = $${i++}`); values.push(JSON.stringify(extras.agent2Output)); }
+    if (extras?.errorMessage) { fields.push(`error_message = $${i++}`); values.push(extras.errorMessage); }
+    if (extras?.sceneId)      { fields.push(`scene_id = $${i++}`); values.push(extras.sceneId); }
+
+    await pool.query(`UPDATE jobs SET ${fields.join(', ')} WHERE id = $1`, values);
   },
-}
 
-const handler = NextAuth(authOptions)
-export { handler as GET, handler as POST }
-```
+  async getJob(jobId: string) {
+    const result = await pool.query('SELECT * FROM jobs WHERE id = $1', [jobId]);
+    return result.rows[0] ?? null;
+  },
 
-**Important:** The PrismaAdapter automatically populates the `Account` table (including `access_token`) when a user first signs in via GitHub OAuth. The session callback above retrieves it on every session read so the access token is always available server-side without an extra DB query in each route.
+  async createScene(params: {
+    jobId: string;
+    sceneStorageKey: string;
+    useCase: string;
+    useCaseCategory: string;
+    floorplanWidth: number;
+    floorplanDepth: number;
+    objectCount: number;
+    shareUrl: string;
+  }): Promise<string> {
+    const result = await pool.query(
+      `INSERT INTO scenes
+         (job_id, scene_storage_key, use_case, use_case_category,
+          floorplan_width, floorplan_depth, object_count, share_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [
+        params.jobId, params.sceneStorageKey, params.useCase,
+        params.useCaseCategory, params.floorplanWidth, params.floorplanDepth,
+        params.objectCount, params.shareUrl
+      ]
+    );
+    return result.rows[0].id;
+  },
 
-### Prisma Client Singleton (`lib/prisma.ts`)
-
-```typescript
-import { PrismaClient } from "@prisma/client"
-
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
-
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
-  })
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
-```
-
-### Fetch Repo Files (`lib/github.ts`)
-
-This function is called at the start of the pipeline to pull all UI-relevant files from the repo.
-
-```typescript
-import { Octokit } from "@octokit/rest"
-import type { RepoFile, OpenPRParams, ScreenshotRef } from "./types"
-
-// ── File fetching ─────────────────────────────────────────────────────────
-
-// Extensions that contain UI code worth analyzing / redesigning
-const UI_EXTENSIONS = [
-  ".tsx", ".jsx", ".ts", ".js",
-  ".css", ".module.css", ".scss",
-  ".html",
-]
-
-// Paths to skip entirely — they don't contain UI code
-const SKIP_PATHS = [
-  "node_modules", ".next", ".git", "dist", "build",
-  "__tests__", ".test.", ".spec.", "jest.", "vitest.",
-  "prisma/migrations", ".env",
-]
-
-function shouldInclude(path: string): boolean {
-  if (SKIP_PATHS.some(skip => path.includes(skip))) return false
-  return UI_EXTENSIONS.some(ext => path.endsWith(ext))
-}
-
-export async function fetchRepoFiles(
-  owner: string,
-  repo: string,
-  accessToken: string
-): Promise<RepoFile[]> {
-  const octokit = new Octokit({ auth: accessToken })
-
-  // Get the full git tree (recursive = flatten all directories)
-  const { data: repoData } = await octokit.rest.repos.get({ owner, repo })
-  const defaultBranch = repoData.default_branch
-
-  const { data: treeData } = await octokit.rest.git.getTree({
-    owner,
-    repo,
-    tree_sha: defaultBranch,
-    recursive: "1",
-  })
-
-  const files = treeData.tree.filter(
-    item => item.type === "blob" && item.path && shouldInclude(item.path)
-  )
-
-  // Cap at 60 files to avoid burning tokens — prioritize app/ and components/
-  const prioritized = [
-    ...files.filter(f => f.path!.startsWith("app/") || f.path!.startsWith("src/app/")),
-    ...files.filter(f => f.path!.includes("component")),
-    ...files.filter(f => !f.path!.startsWith("app/") && !f.path!.includes("component")),
-  ].slice(0, 60)
-
-  // Fetch content of each file (parallel, but respect secondary rate limits)
-  const results: RepoFile[] = []
-  const BATCH_SIZE = 10
-
-  for (let i = 0; i < prioritized.length; i += BATCH_SIZE) {
-    const batch = prioritized.slice(i, i + BATCH_SIZE)
-    const fetched = await Promise.all(
-      batch.map(async item => {
-        try {
-          const { data } = await octokit.rest.git.getBlob({
-            owner,
-            repo,
-            file_sha: item.sha!,
-          })
-          const content =
-            data.encoding === "base64"
-              ? Buffer.from(data.content, "base64").toString("utf-8")
-              : data.content
-          return { path: item.path!, content, encoding: "utf-8" as const, size: item.size ?? 0 }
-        } catch {
-          return null
-        }
-      })
-    )
-    results.push(...fetched.filter((f): f is RepoFile => f !== null))
+  async getScene(sceneId: string) {
+    const result = await pool.query('SELECT * FROM scenes WHERE id = $1', [sceneId]);
+    return result.rows[0] ?? null;
   }
-
-  return results
-}
-
-// ── PR creation ───────────────────────────────────────────────────────────
-
-export async function openDesignPR({
-  accessToken,
-  owner,
-  repo,
-  branchName,
-  beforeScreenshots,
-  afterScreenshots,
-  designBrief,
-  changes,
-}: OpenPRParams): Promise<string> {
-  const octokit = new Octokit({ auth: accessToken })
-
-  // 1. Get default branch
-  const { data: repoData } = await octokit.rest.repos.get({ owner, repo })
-  const defaultBranch = repoData.default_branch
-
-  // 2. Get latest commit SHA of default branch
-  const { data: refData } = await octokit.rest.git.getRef({
-    owner,
-    repo,
-    ref: `heads/${defaultBranch}`,
-  })
-  const latestSHA = refData.object.sha
-
-  // 3. Create new branch
-  await octokit.rest.git.createRef({
-    owner,
-    repo,
-    ref: `refs/heads/${branchName}`,
-    sha: latestSHA,
-  })
-
-  // 4. For each changed file, create a blob
-  const blobs = await Promise.all(
-    changes.map(({ content }) =>
-      octokit.rest.git.createBlob({
-        owner,
-        repo,
-        content: Buffer.from(content).toString("base64"),
-        encoding: "base64",
-      })
-    )
-  )
-
-  // 5. Create a new tree with all changed files
-  const tree = await octokit.rest.git.createTree({
-    owner,
-    repo,
-    base_tree: latestSHA,
-    tree: changes.map(({ path }, i) => ({
-      path,
-      mode: "100644" as const,
-      type: "blob" as const,
-      sha: blobs[i].data.sha,
-    })),
-  })
-
-  // 6. Create commit
-  const commit = await octokit.rest.git.createCommit({
-    owner,
-    repo,
-    message: "✨ DesignPR: Transform UI with real design taste",
-    tree: tree.data.sha,
-    parents: [latestSHA],
-  })
-
-  // 7. Update branch ref to point at new commit
-  await octokit.rest.git.updateRef({
-    owner,
-    repo,
-    ref: `heads/${branchName}`,
-    sha: commit.data.sha,
-  })
-
-  // 8. Open the pull request
-  const prBody = buildPRBody({ beforeScreenshots, afterScreenshots, designBrief })
-
-  const { data: pr } = await octokit.rest.pulls.create({
-    owner,
-    repo,
-    title: "✨ DesignPR: UI Redesign",
-    body: prBody,
-    head: branchName,
-    base: defaultBranch,
-  })
-
-  return pr.html_url
-}
-
-function buildPRBody({
-  beforeScreenshots,
-  afterScreenshots,
-  designBrief,
-}: {
-  beforeScreenshots: ScreenshotRef[]
-  afterScreenshots: ScreenshotRef[]
-  designBrief: Pick<OpenPRParams["designBrief"], "summary" | "tone" | "audience" | "keyChange" | "changes">
-}): string {
-  // NOTE: afterScreenshots[i] must be accessed via a variable — template literal
-  // indexing like `${afterScreenshots[i].url}` does not work inside map callbacks
-  // with template strings in all JS environments. Use explicit variable instead.
-  const rows = beforeScreenshots
-    .map((before, i) => {
-      const after = afterScreenshots[i]
-      return `
-### ${before.pageName}
-
-| Before | After |
-|--------|-------|
-| ![Before](${before.url}) | ![After](${after.url}) |
-`
-    })
-    .join("\n")
-
-  const changeList = designBrief.changes
-    .map(c => `- **${c.file}**: ${c.description}`)
-    .join("\n")
-
-  return `## ✨ DesignPR — Automated UI Redesign
-
-> ${designBrief.summary}
-
----
-
-## Design Brief
-
-**Tone:** ${designBrief.tone}
-**Audience:** ${designBrief.audience}
-**Key change:** ${designBrief.keyChange}
-
----
-
-## Before → After
-
-${rows}
-
----
-
-## What Changed
-
-${changeList}
-
----
-
-*Generated by [DesignPR](https://designpr.app) — Turn vibe coded projects into real products.*`
-}
-```
-
-### List Repos (`app/api/repos/route.ts`)
-
-```typescript
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"
-import { prisma } from "@/lib/prisma"
-import { Octokit } from "@octokit/rest"
-
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
-  const account = await prisma.account.findFirst({
-    where: { userId: session.user.id, provider: "github" },
-    select: { access_token: true },
-  })
-
-  if (!account?.access_token) {
-    return Response.json({ error: "No GitHub token" }, { status: 400 })
-  }
-
-  const octokit = new Octokit({ auth: account.access_token })
-
-  const { data: repos } = await octokit.rest.repos.listForAuthenticatedUser({
-    sort: "updated",
-    per_page: 30,
-    type: "owner",
-  })
-
-  return Response.json(
-    repos.map(r => ({
-      id: r.id,
-      fullName: r.full_name,
-      name: r.name,
-      description: r.description,
-      language: r.language,
-      stargazerCount: r.stargazers_count,
-      updatedAt: r.updated_at,
-      isPrivate: r.private,
-    }))
-  )
-}
+};
 ```
 
 ---
 
-## Vultr Infrastructure
+### 4.3 Vultr Object Storage Client (`lib/storage.ts`)
 
-### What to provision on Vultr
-
-**1. Managed PostgreSQL**
-- Create via Vultr dashboard: Databases → PostgreSQL
-- Get connection string, put in `DATABASE_URL`
-- Append `?sslmode=require` to the connection string — Vultr requires SSL
-- Used for: users, jobs, repo history, generation logs
-
-**2. Object Storage**
-- Create via Vultr dashboard: Storage → Object Storage
-- Create a bucket called `designpr-screenshots`
-- Set bucket ACL to public-read (screenshots need to be embeddable in PRs)
-- Used for: before/after screenshots stored as PNGs
-
-**3. Compute Instance (for Playwright)**
-- Create a $6/month VPS (1 vCPU, 1GB RAM is enough for demo)
-- Ubuntu 22.04
-- Run the playwright-service on it (see Playwright section)
-- Open port 3001 in Vultr firewall
-
-**4. Managed Firewall**
-- Create firewall group in Vultr
-- Allow: port 22 (SSH), port 3001 (Playwright service — restrict to your app IP only)
-- Attach to the compute instance
-
-**5. Load Balancer (optional for demo, nice for pitch)**
-- Only needed if you want to show it in your pitch as part of the Vultr story
-- Can be added without actually routing traffic during the hackathon
-
-### Vultr Object Storage Client (`lib/vultr-storage.ts`)
+Vultr Object Storage is S3-compatible. Use the `@aws-sdk/client-s3` package.
 
 ```typescript
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { Readable } from 'stream';
 
-// Vultr Object Storage is S3-compatible
 const s3 = new S3Client({
-  endpoint: process.env.VULTR_STORAGE_ENDPOINT,
-  region: "us-east-1", // required field but ignored by Vultr
+  endpoint: process.env.VULTR_STORAGE_ENDPOINT, // e.g. https://ewr1.vultrobjects.com
+  region: 'us-east-1', // required by SDK but ignored by Vultr
   credentials: {
     accessKeyId: process.env.VULTR_STORAGE_ACCESS_KEY!,
     secretAccessKey: process.env.VULTR_STORAGE_SECRET_KEY!,
   },
-  forcePathStyle: true, // required for non-AWS S3-compatible stores
-})
+  forcePathStyle: true,
+});
 
-export async function uploadScreenshot(
-  jobId: string,
-  filename: string,
-  buffer: Buffer
-): Promise<string> {
-  const key = `${jobId}/${filename}`
+const BUCKET = process.env.VULTR_STORAGE_BUCKET!;
 
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: process.env.VULTR_STORAGE_BUCKET,
+export const storage = {
+  // Upload a floor plan image. key = "floorplans/{jobId}.jpg"
+  async uploadImage(key: string, buffer: Buffer, contentType: string): Promise<string> {
+    await s3.send(new PutObjectCommand({
+      Bucket: BUCKET,
       Key: key,
       Body: buffer,
-      ContentType: "image/png",
-      ACL: "public-read",
-    })
-  )
+      ContentType: contentType,
+      ACL: 'public-read',
+    }));
+    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+  },
 
-  // Return the public URL
-  return `${process.env.VULTR_STORAGE_ENDPOINT}/${process.env.VULTR_STORAGE_BUCKET}/${key}`
-}
+  // Upload a scene JSON file. key = "scenes/{sceneId}.json"
+  async uploadScene(key: string, sceneData: object): Promise<string> {
+    const body = JSON.stringify(sceneData, null, 2);
+    await s3.send(new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: 'application/json',
+      ACL: 'public-read',
+    }));
+    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+  },
+
+  // Fetch a scene JSON file and parse it
+  async getScene(key: string): Promise<object> {
+    const response = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+    const stream = response.Body as Readable;
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    return JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+  },
+
+  // Get the public URL for any stored object
+  getPublicUrl(key: string): string {
+    return `${process.env.VULTR_STORAGE_ENDPOINT}/${BUCKET}/${key}`;
+  }
+};
 ```
 
 ---
 
-## Google Cloud Vision Integration
-
-### Setup
-1. Create a Google Cloud project
-2. Enable the Cloud Vision API
-3. Create a service account with Vision API access, download JSON key
-4. Place JSON key at `./gcp-service-account.json`
-5. Set `GOOGLE_APPLICATION_CREDENTIALS=./gcp-service-account.json`
-
-Install: `npm install @google-cloud/vision`
-
-### Vision Analysis (`lib/vision.ts`)
+### 4.4 Gemini API Client (`lib/gemini.ts`)
 
 ```typescript
-import vision from "@google-cloud/vision"
-import type { VisionAnalysis, DominantColor, DetectedObject } from "./types"
+import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 
-const client = new vision.ImageAnnotatorClient()
+const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const model = genai.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-export async function analyzeScreenshot(imageUrl: string): Promise<VisionAnalysis> {
-  const [result] = await client.annotateImage({
-    image: { source: { imageUri: imageUrl } },
-    features: [
-      { type: "LABEL_DETECTION", maxResults: 20 },
-      { type: "TEXT_DETECTION" },
-      { type: "IMAGE_PROPERTIES" },      // dominant colors
-      { type: "OBJECT_LOCALIZATION" },   // detect UI elements
-      { type: "WEB_DETECTION" },         // what type of site
-    ],
-  })
+export async function callGemini(prompt: string, imageParts?: Part[]): Promise<string> {
+  const parts: Part[] = [{ text: prompt }];
+  if (imageParts) parts.unshift(...imageParts);
 
-  const labels = (result.labelAnnotations ?? []).map(l => l.description ?? "")
-  const text = (result.textAnnotations ?? []).map(t => t.description ?? "")
-  const colors = (result.imagePropertiesAnnotation?.dominantColors?.colors ?? []) as DominantColor[]
-  const objects = (result.localizedObjectAnnotations ?? []) as DetectedObject[]
-  const webEntities = (result.webDetection?.webEntities ?? []).map(e => e.description ?? "")
-  const pageType = inferPageType(labels, webEntities, text)
+  const result = await model.generateContent({ contents: [{ role: 'user', parts }] });
+  const text = result.response.text();
 
-  return { labels, text, colors, objects, webEntities, pageType }
+  if (!text) throw new Error('Gemini returned empty response');
+  return text;
 }
 
-function inferPageType(labels: string[], webEntities: string[], text: string[]): string {
-  const combined = [...labels, ...webEntities, ...text].join(" ").toLowerCase()
-  if (combined.includes("dashboard") || combined.includes("analytics")) return "dashboard"
-  if (combined.includes("landing") || combined.includes("hero")) return "landing page"
-  if (combined.includes("login") || combined.includes("sign in")) return "auth page"
-  if (combined.includes("portfolio") || combined.includes("about me")) return "portfolio"
-  if (combined.includes("blog") || combined.includes("article")) return "blog"
-  if (combined.includes("ecommerce") || combined.includes("shop") || combined.includes("product")) return "ecommerce"
-  return "web application"
-}
-
-export function buildVisionSummary(analysis: VisionAnalysis): string {
-  const colorStr = analysis.colors
-    .slice(0, 3)
-    .map(c => `rgb(${c.color?.red ?? 0},${c.color?.green ?? 0},${c.color?.blue ?? 0})`)
-    .join(", ")
-
-  return [
-    `Page type: ${analysis.pageType}`,
-    `UI elements detected: ${analysis.objects.map(o => o.name).join(", ")}`,
-    `Dominant colors: ${colorStr}`,
-    `Text content includes: ${analysis.text.slice(0, 5).join(", ")}`,
-    `Design labels: ${analysis.labels.slice(0, 10).join(", ")}`,
-  ].join("\n")
-}
-```
-
-**Critical:** Pass the Vision analysis output to the Brief Agent and Critic Agent. The Vision data tells the agents what the current UI actually looks like structurally, not just what the code says.
-
----
-
-## Backboard Agent Pipeline
-
-### What Backboard does here
-Backboard manages state across all five agents. Each agent reads from and writes to a shared thread. This means Agent 4 (Critic) automatically has access to what Agent 2 (Brief) decided — you don't manually wire context between steps.
-
-Install: `npm install @backboard/sdk` (check backboard.io docs for the current package name)
-
-### Pipeline / Thread Client (`lib/backboard.ts`)
-
-```typescript
-// NOTE: Replace with actual Backboard SDK import once you have the package name.
-// The interface below matches the expected API from Backboard docs.
-// If the SDK isn't available yet, use the REST API directly.
-
-interface BackboardThread {
-  id: string
-  metadata: Record<string, unknown>
-}
-
-interface BackboardClient {
-  threads: {
-    create: (opts: { id: string; metadata: Record<string, unknown> }) => Promise<BackboardThread>
-    setData: (threadId: string, key: string, value: unknown) => Promise<void>
-    getData: (threadId: string, key: string) => Promise<unknown>
-  }
-  agents: {
-    run: (opts: { threadId: string; agent: string; input: Record<string, unknown> }) => Promise<unknown>
-  }
-}
-
-// Instantiate once and export for use in pipeline.ts
-function createBackboardClient(): BackboardClient {
-  const BASE = "https://api.backboard.io/v1"
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${process.env.BACKBOARD_API_KEY}`,
-    "X-Org-Id": process.env.BACKBOARD_ORG_ID!,
-  }
-
+// Convert a Buffer (image data) into a Gemini Part object
+export function imageBufferToPart(buffer: Buffer, mimeType: string): Part {
   return {
-    threads: {
-      async create({ id, metadata }) {
-        const res = await fetch(`${BASE}/threads`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ id, metadata }),
-        })
-        return res.json()
-      },
-      async setData(threadId, key, value) {
-        await fetch(`${BASE}/threads/${threadId}/data/${key}`, {
-          method: "PUT",
-          headers,
-          body: JSON.stringify({ value }),
-        })
-      },
-      async getData(threadId, key) {
-        const res = await fetch(`${BASE}/threads/${threadId}/data/${key}`, { headers })
-        const body = await res.json()
-        return body.value
-      },
-    },
-    agents: {
-      async run({ threadId, agent, input }) {
-        const res = await fetch(`${BASE}/agents/run`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ threadId, agent, input }),
-        })
-        return res.json()
-      },
-    },
-  }
+    inlineData: {
+      data: buffer.toString('base64'),
+      mimeType,
+    }
+  };
 }
 
-// Singleton instance — import `bb` anywhere in the pipeline
-export const bb = createBackboardClient()
-
-export async function createDesignPRPipeline(jobId: string) {
-  return bb.threads.create({ id: jobId, metadata: { jobId } })
-}
-```
-
-### Job Creation Route (`app/api/jobs/create/route.ts`)
-
-```typescript
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"
-import { prisma } from "@/lib/prisma"
-import { createDesignPRPipeline } from "@/lib/backboard"
-import { runPipeline } from "@/lib/pipeline"
-
-export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
-  const { repoFullName, userNote } = await req.json()
-  if (!repoFullName || typeof repoFullName !== "string") {
-    return Response.json({ error: "repoFullName is required" }, { status: 400 })
-  }
-
-  // 1. Create job record
-  const job = await prisma.job.create({
-    data: {
-      userId: session.user.id,
-      repoFullName,
-      userNote: userNote ?? null,
-      status: "pending",
-    },
-  })
-
-  // 2. Create Backboard thread for shared agent state
-  await createDesignPRPipeline(job.id)
-
-  // 3. Kick off the pipeline without awaiting — return job ID immediately
-  // The frontend will poll /api/jobs/[jobId] to track progress.
-  const githubAccessToken = session.user.githubAccessToken ?? ""
-  runPipeline(job.id, repoFullName, userNote ?? "", githubAccessToken).catch(err => {
-    console.error(`[Pipeline ${job.id}] fatal error:`, err)
-    prisma.job
-      .update({ where: { id: job.id }, data: { status: "failed", currentStep: "Error" } })
-      .catch(() => {})
-  })
-
-  return Response.json({ jobId: job.id }, { status: 201 })
+// Fetch image from Vultr Object Storage URL and convert to Part
+export async function imageUrlToPart(url: string): Promise<Part> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image: ${url}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const mimeType = response.headers.get('content-type') ?? 'image/jpeg';
+  return imageBufferToPart(buffer, mimeType);
 }
 ```
 
 ---
 
-## The Agent Prompts
+### 4.5 Agent 1 — Geometry Extractor (`lib/agents/agent1-geometry.ts`)
 
-**This section is the most important in the entire document. The quality of these prompts determines whether you win or lose.**
-
-### OpenAI GPT-4o Helper (`lib/openai.ts`)
-
-Install: `npm install openai`
+**Agent 1's only job:** Look at the floor plan image. Extract walls, rooms, and dimensions. Output structured FloorPlan JSON. Know nothing about the use case.
 
 ```typescript
-import OpenAI from "openai"
+import { callGemini, imageUrlToPart } from '../gemini';
+import { FloorPlan } from '../../types/scene';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const AGENT1_PROMPT = `
+You are a floor plan analysis expert. You will receive an image of a floor plan.
 
-export async function callGPT4o(systemPrompt: string, userPrompt: string): Promise<string> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 8192,
-    temperature: 0.4,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    // Ask the model to return JSON directly — prevents code-fence wrapping
-    response_format: { type: "json_object" },
-  })
+Your task is to extract the physical geometry of the space and return it as structured JSON.
 
-  const text = response.choices[0].message.content ?? ""
-  return text.trim()
-}
+INSTRUCTIONS:
+1. Identify all rooms, their approximate sizes, and their positions relative to each other.
+2. Identify all walls as line segments connecting two points.
+3. Estimate the real-world dimensions. If a scale is shown, use it. If not, estimate based on typical room sizes (a standard office room is about 4m x 4m, a large hall is 20m+ wide).
+4. Assign a coordinate system where the top-left corner of the floor plan is (0, 0), x increases to the right, and y increases downward.
+5. All measurements should be in METERS.
+6. Classify each room using one of these types: main_hall, corridor, bathroom, storage, kitchen, office, entrance, unknown.
 
-// Typed JSON wrapper — parse and validate the response
-export async function callGPT4oJSON<T>(systemPrompt: string, userPrompt: string): Promise<T> {
-  const raw = await callGPT4o(systemPrompt, userPrompt)
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    throw new Error(`GPT-4o returned non-JSON: ${raw.slice(0, 200)}`)
-  }
-}
-```
+CRITICAL: Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON.
 
-> **Note on `response_format: { type: "json_object" }`:** This forces GPT-4o to return valid JSON with no markdown fences. It requires the word "JSON" to appear somewhere in your prompt (the agent prompts below all include it). Do not use this flag on the free tier — it requires at least Tier 1.
-
-### Gemma 4 Helper (`lib/gemma.ts`)
-
-```typescript
-export async function callGemma4(prompt: string): Promise<string> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent?key=${process.env.GOOGLE_GEMINI_API_KEY}`,
+Return this exact structure:
+{
+  "width": <total width in meters as number>,
+  "depth": <total depth in meters as number>,
+  "rooms": [
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 4096,
-        },
-      }),
-    }
-  )
-
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`Gemma API error ${response.status}: ${err}`)
-  }
-
-  const data = await response.json()
-  const text: string = data.candidates[0].content.parts[0].text
-  return text.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim()
-}
-
-// Typed JSON wrapper
-export async function callGemma4JSON<T>(prompt: string): Promise<T> {
-  const raw = await callGemma4(prompt)
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    throw new Error(`Gemma returned non-JSON: ${raw.slice(0, 200)}`)
-  }
-}
-```
-
-### Agent 1: Analyzer (uses Gemma 4 — fast, cheap)
-
-```typescript
-// lib/agents/analyzer.ts
-import { callGemma4JSON } from "@/lib/gemma"
-import type { RepoFile, RepoAnalysis } from "@/lib/types"
-
-export async function runAnalyzer(
-  repoContents: RepoFile[],
-  visionSummary: string
-): Promise<RepoAnalysis> {
-  const fileBlock = repoContents
-    .map(f => `--- ${f.path} ---\n${f.content}`)
-    .join("\n\n")
-
-  const prompt = `
-You are a senior frontend engineer analyzing a codebase to understand its UI structure.
-
-REPOSITORY FILES:
-${fileBlock}
-
-VISUAL ANALYSIS (from Google Cloud Vision screenshot analysis):
-${visionSummary}
-
-Analyze this codebase and return a JSON object with:
-{
-  "framework": "next.js" | "react" | "vue" | "html",
-  "stylingApproach": "tailwind" | "css-modules" | "styled-components" | "plain-css",
-  "uiLibrary": "shadcn" | "mui" | "chakra" | "none",
-  "pages": [{ "path": string, "file": string, "description": string }],
-  "components": [{ "name": string, "file": string, "type": "layout" | "ui" | "page" }],
-  "uiFiles": [string],
-  "hasAnimations": boolean,
-  "hasCustomStyling": boolean,
-  "vibeCodedIndicators": [string]
-}
-
-Return ONLY the JSON object, no other text.
-`
-
-  return callGemma4JSON<RepoAnalysis>(prompt)
-}
-```
-
-### Agent 2: Brief Generator (uses Gemma 4 — fast, cheap)
-
-```typescript
-// lib/agents/brief.ts
-import { callGemma4JSON } from "@/lib/gemma"
-import type { RepoAnalysis, DesignBrief } from "@/lib/types"
-
-export async function runBriefGenerator(
-  analysis: RepoAnalysis,
-  visionSummary: string,
-  userNote: string
-): Promise<DesignBrief> {
-  const prompt = `
-You are a senior product designer generating a design brief for a UI redesign.
-
-APP ANALYSIS:
-${JSON.stringify(analysis, null, 2)}
-
-VISUAL ANALYSIS:
-${visionSummary}
-
-USER CONTEXT:
-"${userNote}"
-
-Generate a design brief that will guide a complete UI redesign. Return JSON:
-{
-  "appType": string,
-  "targetAudience": string,
-  "audience": string,
-  "tone": string,
-  "colorDirection": string,
-  "typographyDirection": string,
-  "layoutPrinciples": [string],
-  "animationStyle": string,
-  "keyChange": string,
-  "avoidPatterns": [string],
-  "summary": string,
-  "changes": [{ "file": string, "description": string }]
-}
-
-Return ONLY the JSON object.
-`
-
-  return callGemma4JSON<DesignBrief>(prompt)
-}
-```
-
-### Agent 3: Redesign Agent (uses GPT-4o — most important agent)
-
-```typescript
-// lib/agents/redesign.ts
-import { callGPT4oJSON } from "@/lib/openai"
-import type { RepoFile, DesignBrief, RepoAnalysis, FileChange } from "@/lib/types"
-
-const ANTI_PATTERN_BLACKLIST = `
-ANTI-PATTERN BLACKLIST — NEVER DO ANY OF THESE:
-1. Never use default Shadcn/UI gray color scheme (#f4f4f5, #e4e4e7, #a1a1aa)
-2. Never apply the same border-radius to every element (e.g. rounded-lg everywhere)
-3. Never stack multiple buttons of the same color next to each other
-4. Never use Inter font at default weight (400) for headings — use bold weights or different fonts
-5. Never use generic gradient: "from-blue-500 to-purple-500" or similar cliché gradients
-6. Never center-align every single element on the page
-7. Never use the default Tailwind slate gray (#64748b) as primary text color
-8. Never use placeholder icons (generic squares) — use real lucide-react icons
-9. Never add a component without considering hover state
-10. Never use padding less than p-4 (16px) for card interiors — go generous
-11. Never have zero animations — every interactive element needs a transition
-12. Never use font-size below text-sm for body content
-13. Never use opacity-50 as the only visual distinction for disabled states
-14. Never stack more than 2 font weights without clear visual purpose
-15. Never use justify-content: center for a navbar — use space-between with real nav items
-`
-
-export async function runRedesign(
-  fileContents: RepoFile[],
-  brief: DesignBrief,
-  analysis: RepoAnalysis
-): Promise<FileChange[]> {
-  const systemPrompt = `
-You are an elite frontend engineer and designer with taste as sharp as Linear, Vercel, and Stripe.
-You write production-quality React/Next.js code that looks like it was built by a design-obsessed team.
-
-${ANTI_PATTERN_BLACKLIST}
-
-DESIGN PRINCIPLES YOU ALWAYS FOLLOW:
-- Typography creates hierarchy: use at least 3 distinct type sizes with purpose
-- Whitespace is your most powerful tool — be generous
-- Every interactive element has a hover state and transition
-- Animations should feel physical: use ease-out for entrances, ease-in for exits
-- Color should have meaning: one accent, supporting neutrals, semantic states
-- Components should feel custom even when built on primitives
-- Use Framer Motion for React animations — import { motion } from "framer-motion"
-- Scroll-triggered reveals using Framer Motion's whileInView prop
-- Micro-interactions on buttons: scale(0.97) on press, slight lift on hover
-- Cards should have subtle shadows that intensify on hover
-
-TECHNICAL RULES:
-- Preserve all functionality — only change visual/styling code
-- Keep all imports that are needed
-- Use the same framework and styling approach as the original (Tailwind, CSS modules, etc.)
-- Do not change API calls, data fetching, or business logic
-- You may add new imports for animation libraries if needed
-- Return the complete file content for every file you change
-`
-
-  const userPrompt = `
-DESIGN BRIEF:
-${JSON.stringify(brief, null, 2)}
-
-CURRENT CODE FILES TO REDESIGN:
-${fileContents.map(f => `=== FILE: ${f.path} ===\n${f.content}`).join("\n\n")}
-
-Redesign these files according to the design brief. Apply real design taste.
-
-Return a JSON array of file changes:
-[
-  {
-    "path": "relative/path/to/file.tsx",
-    "content": "complete new file content here"
-  }
-]
-
-Return ONLY the JSON array. No explanation. Complete file content only.
-`
-
-  return callGPT4oJSON<FileChange[]>(systemPrompt, userPrompt)
-}
-```
-
-### Agent 4: Critic Agent (uses GPT-4o)
-
-```typescript
-// lib/agents/critic.ts
-import { callGPT4oJSON } from "@/lib/openai"
-import type { FileChange, DesignBrief, CritiqueResult } from "@/lib/types"
-
-export async function runCritic(
-  fileChanges: FileChange[],
-  brief: DesignBrief,
-  afterVisionSummary: string
-): Promise<CritiqueResult> {
-  const systemPrompt = `
-You are a brutally honest senior product designer doing a design review.
-Your job is to identify anything in the redesigned code that still looks AI-generated, generic, or lazy.
-You are reviewing code that was just redesigned. Be specific. Be harsh. Be actionable.
-`
-
-  const userPrompt = `
-DESIGN BRIEF (what we were aiming for):
-${JSON.stringify(brief, null, 2)}
-
-REDESIGNED CODE:
-${fileChanges.map(f => `=== ${f.path} ===\n${f.content}`).join("\n\n")}
-
-VISUAL ANALYSIS OF THE REDESIGNED OUTPUT (what Google Cloud Vision sees):
-${afterVisionSummary}
-
-Review the redesigned code against the brief and the anti-pattern list.
-
-Return JSON:
-{
-  "passedReview": boolean,
-  "score": number,
-  "issues": [
-    {
-      "file": string,
-      "issue": string,
-      "fix": string
+      "id": "room_1",
+      "name": "<descriptive name>",
+      "x": <top-left x in meters>,
+      "y": <top-left y in meters>,
+      "width": <room width in meters>,
+      "height": <room depth in meters>,
+      "type": "<room type>"
     }
   ],
-  "positives": [string]
+  "walls": [
+    { "x1": <meters>, "y1": <meters>, "x2": <meters>, "y2": <meters>, "height": 3.0 }
+  ],
+  "scale": <your estimated pixels-per-meter ratio, or 10 if unknown>,
+  "confidence": <0.0 to 1.0 how confident you are in the extraction>,
+  "notes": "<any important observations about the floor plan>"
 }
+`;
 
-Be honest. If score >= 8 and no critical issues, set passedReview to true.
-Return ONLY the JSON.
-`
+export async function runAgent1(floorplanImageUrl: string): Promise<FloorPlan> {
+  const imagePart = await imageUrlToPart(floorplanImageUrl);
+  const rawResponse = await callGemini(AGENT1_PROMPT, [imagePart]);
 
-  return callGPT4oJSON<CritiqueResult>(systemPrompt, userPrompt)
-}
-```
+  // Strip any accidental markdown fences
+  const cleaned = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-### Agent 5: Reviser Agent (uses GPT-4o)
+  let parsed: FloorPlan;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    throw new Error(`Agent 1 returned invalid JSON: ${cleaned.substring(0, 500)}`);
+  }
 
-```typescript
-// lib/agents/reviser.ts
-import { callGPT4oJSON } from "@/lib/openai"
-import type { FileChange, CritiqueResult } from "@/lib/types"
+  // Validation
+  if (!parsed.rooms || parsed.rooms.length === 0) {
+    throw new Error('Agent 1 detected no rooms in the floor plan');
+  }
+  if (!parsed.walls || parsed.walls.length === 0) {
+    // Generate bounding walls from floor plan dimensions if none detected
+    parsed.walls = [
+      { x1: 0, y1: 0, x2: parsed.width, y2: 0, height: 3.0 },
+      { x1: parsed.width, y1: 0, x2: parsed.width, y2: parsed.depth, height: 3.0 },
+      { x1: parsed.width, y1: parsed.depth, x2: 0, y2: parsed.depth, height: 3.0 },
+      { x1: 0, y1: parsed.depth, x2: 0, y2: 0, height: 3.0 },
+    ];
+  }
 
-export async function runReviser(
-  fileChanges: FileChange[],
-  critique: CritiqueResult
-): Promise<FileChange[]> {
-  // If the critic passed it, skip revision entirely
-  if (critique.passedReview) return fileChanges
-
-  const systemPrompt = `
-You are an elite frontend engineer applying specific design fixes identified by a design review.
-Apply ONLY the fixes listed. Do not change anything not mentioned in the issues list.
-Preserve all functionality.
-`
-
-  const issueBlock = critique.issues
-    .map(i => `File: ${i.file}\nIssue: ${i.issue}\nFix: ${i.fix}`)
-    .join("\n\n")
-
-  const userPrompt = `
-ISSUES TO FIX:
-${issueBlock}
-
-CURRENT CODE:
-${fileChanges.map(f => `=== ${f.path} ===\n${f.content}`).join("\n\n")}
-
-Apply all fixes and return the updated files as a JSON array:
-[{ "path": string, "content": string }]
-
-Return ONLY the JSON array.
-`
-
-  return callGPT4oJSON<FileChange[]>(systemPrompt, userPrompt)
+  return parsed;
 }
 ```
 
 ---
 
-## Playwright Screenshot System
+### 4.6 Agent 2 — Object Placement Planner (`lib/agents/agent2-placement.ts`)
 
-The Playwright service runs on your Vultr compute instance as a separate Express server. Your Next.js app calls it via HTTP.
+**Agent 2's only job:** Given the geometry from Agent 1 and the user's use case, decide what objects to place and exactly where. Output an array of SceneObject.
 
-### Setup on Vultr VPS
+```typescript
+import { callGemini } from '../gemini';
+import { FloorPlan, SceneObject, UseCaseCategory } from '../../types/scene';
 
-```bash
-# SSH into Vultr compute instance
-ssh root@your-vultr-ip
+function buildAgent2Prompt(floorplan: FloorPlan, useCase: string): string {
+  return `
+You are an expert spatial planner who arranges spaces for real-world events and operations.
 
-# Install Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
+You will receive:
+1. A floor plan geometry (extracted from an image)
+2. A use case description from the user
 
-# Install playwright service dependencies
-mkdir /opt/designpr-playwright && cd /opt/designpr-playwright
-npm init -y
-npm install playwright express
-npx playwright install chromium
-npx playwright install-deps chromium
+Your task is to decide what objects to place in the space and exactly where, then return structured JSON.
 
-# Copy your playwright-service files here (scp or git clone)
+FLOOR PLAN GEOMETRY:
+${JSON.stringify(floorplan, null, 2)}
 
-# Run with PM2 for persistence across reboots
-npm install -g pm2
-pm2 start dist/index.js --name designpr-playwright
-pm2 save
-pm2 startup   # follow the printed command to enable on reboot
+USER USE CASE:
+"${useCase}"
+
+PLACEMENT RULES:
+- All x and y coordinates must be within the floor plan bounds (0 to ${floorplan.width} for x, 0 to ${floorplan.depth} for y)
+- Objects must not overlap each other. Maintain at least 1 meter clearance between objects.
+- Leave 1.5 meter clearance from all walls for walkways.
+- Place stages and presentation areas against walls, not in the center.
+- Place seating facing toward stages or screens.
+- For hackathons: hacking stations along walls, booths in center, stage at one end.
+- For events: round tables distributed across main area, stage at front, bar against a wall.
+- For offices: desks in rows or clusters, meeting rooms separated, lounge near entrance.
+- For factories: workstations in sequence along production flow, storage at back.
+
+AVAILABLE OBJECT TYPES AND DEFAULT SIZES:
+- table: 2.0m wide, 1.0m deep, 0.75m tall (for dining/work)
+- chair: 0.5m wide, 0.5m deep, 0.9m tall
+- stage: 8.0m wide, 4.0m deep, 0.5m tall (raised platform)
+- booth: 2.0m wide, 2.0m deep, 2.0m tall (sponsor/exhibition)
+- desk: 1.5m wide, 0.8m deep, 0.75m tall (office desk)
+- podium: 0.6m wide, 0.6m deep, 1.1m tall (speaker podium)
+- screen: 3.0m wide, 0.1m deep, 2.0m tall (display screen)
+- workstation: 2.0m wide, 1.5m deep, 1.0m tall (industrial)
+- shelf: 1.0m wide, 0.4m deep, 2.0m tall (storage)
+- counter: 2.0m wide, 0.8m deep, 0.9m tall (bar/reception)
+- equipment: 1.5m wide, 1.5m deep, 1.2m tall (generic machinery)
+- divider: 3.0m wide, 0.1m deep, 1.8m tall (partition panel)
+
+CATEGORIZE the use case as one of: event, hackathon, office, factory, classroom, retail, other
+
+CRITICAL: Return ONLY a valid JSON object. No markdown, no explanation, no code fences.
+
+Return this exact structure:
+{
+  "useCaseCategory": "<category>",
+  "objects": [
+    {
+      "id": "obj_1",
+      "type": "<object type>",
+      "roomId": "<id of the room this object is in>",
+      "x": <center x position in meters>,
+      "y": <center y position in meters>,
+      "z": 0,
+      "width": <width in meters>,
+      "depth": <depth in meters>,
+      "height": <height in meters>,
+      "rotation": <0 to 360 degrees>,
+      "label": "<descriptive label shown in 3D>"
+    }
+  ],
+  "placementNotes": "<explain your placement decisions in 2-3 sentences>"
+}
+
+Place enough objects to make the space look fully configured. For a large hall aim for 15-40 objects. For a small room aim for 5-15 objects.
+`;
+}
+
+export async function runAgent2(
+  floorplan: FloorPlan,
+  useCase: string
+): Promise<{ objects: SceneObject[]; useCaseCategory: UseCaseCategory; placementNotes: string }> {
+  const prompt = buildAgent2Prompt(floorplan, useCase);
+  const rawResponse = await callGemini(prompt);
+
+  const cleaned = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+  let parsed: { objects: SceneObject[]; useCaseCategory: UseCaseCategory; placementNotes: string };
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    throw new Error(`Agent 2 returned invalid JSON: ${cleaned.substring(0, 500)}`);
+  }
+
+  if (!parsed.objects || parsed.objects.length === 0) {
+    throw new Error('Agent 2 placed no objects in the scene');
+  }
+
+  // Ensure all objects have IDs
+  parsed.objects = parsed.objects.map((obj, i) => ({
+    ...obj,
+    id: obj.id ?? `obj_${i + 1}`,
+  }));
+
+  return parsed;
+}
 ```
 
-### Playwright Service `package.json`
+---
+
+### 4.7 Agent 3 — Scene Assembler (`lib/agents/agent3-assembly.ts`)
+
+**Agent 3's job:** Take geometry from Agent 1 and placement from Agent 2, validate everything, and produce the final complete SceneFile.
+
+```typescript
+import { FloorPlan, SceneObject, SceneFile, UseCaseCategory } from '../../types/scene';
+import { v4 as uuidv4 } from 'uuid';
+
+export function runAgent3(params: {
+  floorplan: FloorPlan;
+  objects: SceneObject[];
+  useCaseCategory: UseCaseCategory;
+  placementNotes: string;
+  useCase: string;
+}): SceneFile {
+  const { floorplan, objects, useCaseCategory, placementNotes, useCase } = params;
+
+  // Clamp all object positions to floor plan bounds
+  const validatedObjects = objects.map(obj => ({
+    ...obj,
+    x: Math.max(obj.width / 2, Math.min(floorplan.width - obj.width / 2, obj.x)),
+    y: Math.max(obj.depth / 2, Math.min(floorplan.depth - obj.depth / 2, obj.y)),
+    z: Math.max(0, obj.z),
+    rotation: ((obj.rotation % 360) + 360) % 360, // normalize to 0-360
+  }));
+
+  const sceneFile: SceneFile = {
+    version: '1.0',
+    sceneId: uuidv4(),
+    createdAt: new Date().toISOString(),
+    floorplan,
+    configuration: {
+      useCase,
+      useCaseCategory,
+      objects: validatedObjects,
+      placementNotes,
+    },
+  };
+
+  return sceneFile;
+}
+```
+
+---
+
+### 4.8 Pipeline Orchestrator (`lib/backboard.ts`)
+
+This function runs the full three-agent pipeline. It is called from the upload API route and runs asynchronously (does not block the HTTP response).
+
+```typescript
+import { runAgent1 } from './agents/agent1-geometry';
+import { runAgent2 } from './agents/agent2-placement';
+import { runAgent3 } from './agents/agent3-assembly';
+import { storage } from './storage';
+import { db } from './db';
+
+export async function runPipeline(jobId: string, floorplanImageUrl: string, useCase: string): Promise<void> {
+  try {
+    // --- Agent 1 ---
+    await db.updateJobStatus(jobId, 'agent1_running');
+    const floorplan = await runAgent1(floorplanImageUrl);
+    await db.updateJobStatus(jobId, 'agent1_done', { agent1Output: floorplan });
+
+    // --- Agent 2 ---
+    await db.updateJobStatus(jobId, 'agent2_running');
+    const { objects, useCaseCategory, placementNotes } = await runAgent2(floorplan, useCase);
+    await db.updateJobStatus(jobId, 'agent2_done', { agent2Output: { objects, useCaseCategory, placementNotes } });
+
+    // --- Agent 3 ---
+    await db.updateJobStatus(jobId, 'agent3_running');
+    const sceneFile = runAgent3({ floorplan, objects, useCaseCategory, placementNotes, useCase });
+
+    // --- Save to Object Storage ---
+    const sceneKey = `scenes/${sceneFile.sceneId}.json`;
+    const shareUrl = await storage.uploadScene(sceneKey, sceneFile);
+
+    // --- Save to Database ---
+    const sceneId = await db.createScene({
+      jobId,
+      sceneStorageKey: sceneKey,
+      useCase,
+      useCaseCategory,
+      floorplanWidth: floorplan.width,
+      floorplanDepth: floorplan.depth,
+      objectCount: objects.length,
+      shareUrl,
+    });
+
+    await db.updateJobStatus(jobId, 'complete', { sceneId });
+
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await db.updateJobStatus(jobId, 'failed', { errorMessage: message });
+    throw error;
+  }
+}
+```
+
+---
+
+### 4.9 API Routes
+
+#### Upload Route (`app/api/upload/route.ts`)
+
+Accepts multipart form data containing the floor plan image and use case text. Saves image to Object Storage. Creates a job record. Fires the pipeline asynchronously. Returns the job ID immediately.
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { storage } from '@/lib/storage';
+import { db } from '@/lib/db';
+import { runPipeline } from '@/lib/backboard';
+import { v4 as uuidv4 } from 'uuid';
+
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get('floorplan') as File | null;
+    const useCase = formData.get('useCase') as string | null;
+
+    // Validation
+    if (!file) return NextResponse.json({ error: 'No floor plan image provided' }, { status: 400 });
+    if (!useCase || useCase.trim().length < 10) {
+      return NextResponse.json({ error: 'Use case description too short (minimum 10 characters)' }, { status: 400 });
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Image too large (max 10MB)' }, { status: 400 });
+    }
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      return NextResponse.json({ error: 'Invalid file type. Use JPG, PNG, or WebP.' }, { status: 400 });
+    }
+
+    // Upload image to Object Storage
+    const jobId = uuidv4();
+    const imageKey = `floorplans/${jobId}.jpg`;
+    const imageBuffer = Buffer.from(await file.arrayBuffer());
+    const imageUrl = await storage.uploadImage(imageKey, imageBuffer, file.type);
+
+    // Create job record
+    await db.createJob(useCase.trim(), imageKey);
+
+    // Fire pipeline asynchronously — do NOT await this
+    // The HTTP response returns immediately with the jobId
+    runPipeline(jobId, imageUrl, useCase.trim()).catch(err => {
+      console.error(`Pipeline failed for job ${jobId}:`, err);
+    });
+
+    return NextResponse.json({ jobId }, { status: 202 });
+
+  } catch (error) {
+    console.error('Upload error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+// Required for file uploads
+export const runtime = 'nodejs';
+export const maxDuration = 30;
+```
+
+#### Job Status Route (`app/api/job/[jobId]/route.ts`)
+
+The frontend polls this every 2 seconds to check pipeline progress.
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Preparing your floor plan...',
+  agent1_running: 'Reading floor plan geometry...',
+  agent1_done: 'Floor plan extracted!',
+  agent2_running: 'Planning object placement...',
+  agent2_done: 'Objects placed!',
+  agent3_running: 'Assembling 3D scene...',
+  complete: 'Scene ready!',
+  failed: 'Processing failed',
+};
+
+const STATUS_PROGRESS: Record<string, number> = {
+  pending: 5,
+  agent1_running: 20,
+  agent1_done: 40,
+  agent2_running: 55,
+  agent2_done: 75,
+  agent3_running: 90,
+  complete: 100,
+  failed: 0,
+};
+
+export async function GET(_req: NextRequest, { params }: { params: { jobId: string } }) {
+  const job = await db.getJob(params.jobId);
+
+  if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+
+  return NextResponse.json({
+    status: job.status,
+    label: STATUS_LABELS[job.status] ?? job.status,
+    progress: STATUS_PROGRESS[job.status] ?? 0,
+    sceneId: job.scene_id ?? null,
+    error: job.error_message ?? null,
+  });
+}
+```
+
+#### Scene Route (`app/api/scene/[sceneId]/route.ts`)
+
+Returns the full scene JSON for the 3D viewer to consume.
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { storage } from '@/lib/storage';
+
+export async function GET(_req: NextRequest, { params }: { params: { sceneId: string } }) {
+  const scene = await db.getScene(params.sceneId);
+  if (!scene) return NextResponse.json({ error: 'Scene not found' }, { status: 404 });
+
+  const sceneData = await storage.getScene(scene.scene_storage_key);
+  return NextResponse.json(sceneData);
+}
+```
+
+---
+
+### 4.10 Demo Scene Pre-generation Script (`scripts/seed-demo.ts`)
+
+Run this script before the demo to pre-generate the BearHacks scene so it loads instantly on stage.
+
+```typescript
+import { runPipeline } from '../lib/backboard';
+import { db } from '../lib/db';
+import { storage } from '../lib/storage';
+import * as fs from 'fs';
+import * as path from 'path';
+
+async function seedDemo() {
+  console.log('Seeding BearHacks demo scene...');
+
+  const imagePath = path.join(process.cwd(), 'public/demo/bearhacks-floorplan.jpg');
+  const imageBuffer = fs.readFileSync(imagePath);
+
+  // Upload the image
+  const imageKey = 'floorplans/demo-bearhacks.jpg';
+  const imageUrl = await storage.uploadImage(imageKey, imageBuffer, 'image/jpeg');
+  console.log('Image uploaded:', imageUrl);
+
+  // Create job
+  const jobId = await db.createJob(
+    'hackathon with hacking stations along the walls, sponsor booths in the center, and a ceremony stage at the front',
+    imageKey
+  );
+  console.log('Job created:', jobId);
+
+  // Run pipeline synchronously for seeding
+  await runPipeline(jobId, imageUrl,
+    'hackathon with hacking stations along the walls, sponsor booths in the center, and a ceremony stage at the front'
+  );
+
+  const job = await db.getJob(jobId);
+  console.log('Demo scene ready! Scene ID:', job.scene_id);
+  console.log('Share URL:', job.scene_id ? `http://your-domain.com/scene/${job.scene_id}` : 'N/A');
+}
+
+seedDemo().catch(console.error);
+```
+
+---
+
+## 5. Person 2 — Frontend, UI & Three.js
+
+**Your responsibility:** Everything the user sees and interacts with. The landing page, upload form, progress tracking UI, and most critically — the Three.js 3D scene where users walk through their configured space.
+
+**You own these files:**
+- `app/page.tsx`
+- `app/upload/page.tsx`
+- `app/processing/[jobId]/page.tsx`
+- `app/scene/[sceneId]/page.tsx`
+- `components/ThreeScene.tsx`
+- `components/UploadForm.tsx`
+- `components/ProgressTracker.tsx`
+- `components/SceneViewer.tsx`
+- `components/ui/`
+
+---
+
+### 5.1 Landing Page (`app/page.tsx`)
+
+The landing page must be visually stunning. This is what wins Best UI/UX.
+
+**Required sections:**
+
+**Hero Section:**
+- Large headline: "Upload any floor plan. Configure any space. In seconds."
+- Subheadline: "AI reads your floor plan and use case, then builds a walkable 3D scene of your configured space."
+- Single CTA button: "Get Started" → navigates to `/upload`
+- Background: dark gradient or subtle animated grid pattern
+- Optional: animated demo GIF or looping video of the 3D scene
+
+**How It Works Section:**
+Three steps shown as large numbered cards side by side:
+1. Upload your floor plan (icon: document upload)
+2. Describe your use case (icon: chat bubble)
+3. Walk through your space in 3D (icon: 3D cube)
+
+**Use Case Examples Section:**
+Four cards showing the different use cases with icons:
+- Hackathon (laptop icon)
+- Events & Galas (celebration icon)
+- Office Planning (building icon)
+- Factory Layout (gear icon)
+
+Each card shows a one-sentence example prompt in italics.
+
+**Powered By Section:**
+Logo strip showing: Gemini, Three.js, Vultr, Backboard
+
+**Design Requirements:**
+- Dark theme (background #0a0a0a or similar)
+- Accent color: bright electric blue #3B82F6 or purple #8B5CF6
+- Font: Inter or similar clean sans-serif
+- All buttons must have hover animations
+- Page must be fully responsive (mobile + desktop)
+
+---
+
+### 5.2 Upload Page (`app/upload/page.tsx`)
+
+This page has two inputs: the floor plan image upload and the use case text. It calls the upload API route and then navigates to the processing page.
+
+**Layout:**
+Two-column layout on desktop, stacked on mobile.
+
+Left column — Floor Plan Upload:
+- Large dashed dropzone area (drag and drop or click to browse)
+- Accepts JPG, PNG, WebP files up to 10MB
+- On file select: show a thumbnail preview of the uploaded image
+- File name and size shown below the preview
+- On error: show red error message inline
+
+Right column — Use Case Input:
+- Label: "What are you setting up?"
+- Large textarea (minimum 4 rows) with placeholder examples that rotate every 3 seconds:
+  - "Hackathon with hacking stations along the walls, sponsor booths in the center, and a ceremony stage at the front"
+  - "200 person gala with round tables, a dance floor, and a bar on the east wall"
+  - "Open office with 40 desks, 3 meeting rooms, and a lounge area near the entrance"
+  - "Assembly line with 3 workstations, a forklift path down the center, and storage in the back"
+- Character count shown below (minimum 10, maximum 500)
+
+Submit Button:
+- Full-width button at the bottom: "Generate My 3D Space →"
+- Disabled until both inputs are valid
+- On click: POST to `/api/upload`, then navigate to `/processing/{jobId}`
+- Loading state: spinner + "Uploading..." text
+
+```typescript
+// Key logic in UploadForm.tsx
+const handleSubmit = async () => {
+  setLoading(true);
+  const formData = new FormData();
+  formData.append('floorplan', selectedFile);
+  formData.append('useCase', useCaseText);
+
+  const response = await fetch('/api/upload', { method: 'POST', body: formData });
+  const { jobId } = await response.json();
+
+  router.push(`/processing/${jobId}`);
+};
+```
+
+---
+
+### 5.3 Processing Page (`app/processing/[jobId]/page.tsx`)
+
+This page shows real-time progress while the AI pipeline runs. It polls the job status API every 2 seconds.
+
+**Layout:**
+- Centered vertically and horizontally
+- Large progress bar at top (animated fill)
+- Current status label in large text below the bar
+- Three agent steps shown as a vertical list with icons:
+  - Step 1: "Reading floor plan geometry" (Agent 1)
+  - Step 2: "Planning object placement" (Agent 2)
+  - Step 3: "Assembling 3D scene" (Agent 3)
+- Each step shows: waiting (grey circle) → running (spinning blue circle) → done (green checkmark)
+- Animated background: subtle particles or flowing grid
+
+**Polling Logic:**
+```typescript
+// In processing/[jobId]/page.tsx
+useEffect(() => {
+  const interval = setInterval(async () => {
+    const res = await fetch(`/api/job/${jobId}`);
+    const data = await res.json();
+    setStatus(data.status);
+    setProgress(data.progress);
+    setLabel(data.label);
+
+    if (data.status === 'complete') {
+      clearInterval(interval);
+      router.push(`/scene/${data.sceneId}`);
+    }
+    if (data.status === 'failed') {
+      clearInterval(interval);
+      setError(data.error);
+    }
+  }, 2000);
+
+  return () => clearInterval(interval);
+}, [jobId]);
+```
+
+**Step Status Mapping:**
+- Agent 1 running: Step 1 spins, Steps 2+3 grey
+- Agent 1 done: Step 1 green, Step 2 starts
+- Agent 2 running: Step 1 green, Step 2 spins, Step 3 grey
+- Agent 2 done: Steps 1+2 green, Step 3 starts
+- Agent 3 running: Steps 1+2 green, Step 3 spins
+- Complete: All three green, redirect fires
+
+---
+
+### 5.4 Scene Viewer Page (`app/scene/[sceneId]/page.tsx`)
+
+This page loads the scene JSON and renders it in Three.js. It is the primary product experience.
+
+**Layout:**
+- Full screen: Three.js canvas takes the entire viewport
+- Floating UI overlay (top-left): Scene title + use case text
+- Floating UI overlay (bottom-center): WASD control hints
+- Floating UI overlay (top-right): 
+  - "Share" button (copies current URL to clipboard)
+  - "New Scene" button (navigates back to /upload)
+  - "Orbit View" / "Walk Mode" toggle button
+
+**Data Loading:**
+```typescript
+// In scene/[sceneId]/page.tsx
+const [sceneData, setSceneData] = useState<SceneFile | null>(null);
+
+useEffect(() => {
+  fetch(`/api/scene/${sceneId}`)
+    .then(r => r.json())
+    .then(setSceneData);
+}, [sceneId]);
+
+if (!sceneData) return <LoadingSpinner />;
+return <SceneViewer sceneData={sceneData} />;
+```
+
+---
+
+### 5.5 Three.js Scene Component (`components/ThreeScene.tsx`)
+
+This is the most critical frontend component. It receives a `SceneFile` and renders the complete interactive 3D scene.
+
+**Setup:**
+```typescript
+import * as THREE from 'three';
+import { useEffect, useRef } from 'react';
+import { SceneFile, SceneObject, Wall } from '@/types/scene';
+
+interface Props {
+  sceneData: SceneFile;
+  mode: 'walk' | 'orbit';
+}
+```
+
+**Scene Initialization:**
+```typescript
+useEffect(() => {
+  const canvas = canvasRef.current;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e); // dark blue-grey
+  scene.fog = new THREE.Fog(0x1a1a2e, 20, 80); // atmospheric depth
+
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
+  // Start camera in center of the space at eye level
+  camera.position.set(
+    sceneData.floorplan.width / 2,
+    1.7, // eye height in meters
+    sceneData.floorplan.depth / 2
+  );
+  camera.lookAt(sceneData.floorplan.width / 2, 1.7, 0);
+}, [sceneData]);
+```
+
+**Floor Rendering:**
+```typescript
+function createFloor(width: number, depth: number): THREE.Mesh {
+  const geometry = new THREE.PlaneGeometry(width, depth);
+  const material = new THREE.MeshLambertMaterial({
+    color: 0x2d2d2d, // dark grey floor
+  });
+  const floor = new THREE.Mesh(geometry, material);
+  floor.rotation.x = -Math.PI / 2; // lay flat
+  floor.position.set(width / 2, 0, depth / 2);
+  floor.receiveShadow = true;
+  return floor;
+}
+```
+
+**Wall Rendering:**
+```typescript
+function createWall(wall: Wall): THREE.Mesh {
+  const dx = wall.x2 - wall.x1;
+  const dz = wall.y2 - wall.y1;
+  const length = Math.sqrt(dx * dx + dz * dz);
+  const angle = Math.atan2(dz, dx);
+
+  const geometry = new THREE.BoxGeometry(length, wall.height, 0.2);
+  const material = new THREE.MeshLambertMaterial({ color: 0x4a4a6a }); // muted blue-grey
+  const wallMesh = new THREE.Mesh(geometry, material);
+
+  wallMesh.position.set(
+    (wall.x1 + wall.x2) / 2,
+    wall.height / 2,
+    (wall.y1 + wall.y2) / 2
+  );
+  wallMesh.rotation.y = -angle;
+  wallMesh.castShadow = true;
+  wallMesh.receiveShadow = true;
+  return wallMesh;
+}
+```
+
+**Object Colors by Type:**
+```typescript
+const OBJECT_COLORS: Record<string, number> = {
+  table:        0x8B6914, // warm brown
+  chair:        0x4a7c59, // muted green
+  stage:        0x2c5282, // deep blue raised platform
+  booth:        0x7b2d8b, // purple
+  desk:         0x6b8cae, // steel blue
+  podium:       0xd69e2e, // gold
+  screen:       0x1a1a2a, // near-black panel
+  workstation:  0x4a5568, // industrial grey
+  shelf:        0x744210, // dark wood brown
+  counter:      0x975a16, // medium brown
+  equipment:    0x2d3748, // dark machinery grey
+  divider:      0xe2e8f0, // light partition
+  plant:        0x276749, // green
+  entrance_marker: 0xe53e3e, // red arrow
+};
+```
+
+**Object Rendering:**
+```typescript
+function createObject(obj: SceneObject): THREE.Group {
+  const group = new THREE.Group();
+
+  // Main geometry
+  let geometry: THREE.BufferGeometry;
+  switch (obj.type) {
+    case 'plant':
+      geometry = new THREE.CylinderGeometry(obj.width / 2, obj.width / 2, obj.height, 8);
+      break;
+    case 'podium':
+      geometry = new THREE.CylinderGeometry(obj.width / 3, obj.width / 2, obj.height, 8);
+      break;
+    default:
+      geometry = new THREE.BoxGeometry(obj.width, obj.height, obj.depth);
+  }
+
+  const color = OBJECT_COLORS[obj.type] ?? 0x718096;
+  const material = new THREE.MeshLambertMaterial({ color });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  // Position: scene uses Y-up, Three.js uses Y-up
+  // Floor plan x → Three.js x, Floor plan y → Three.js z
+  mesh.position.set(0, obj.height / 2 + obj.z, 0);
+  group.position.set(obj.x, 0, obj.y);
+  group.rotation.y = (obj.rotation * Math.PI) / 180;
+  group.add(mesh);
+
+  // Label
+  const label = createTextLabel(obj.label);
+  label.position.set(0, obj.height + 0.3, 0);
+  group.add(label);
+
+  return group;
+}
+```
+
+**Text Labels (CSS2DRenderer):**
+Use Three.js CSS2DRenderer for crisp text labels that always face the camera.
+
+```typescript
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer';
+
+function createTextLabel(text: string): CSS2DObject {
+  const div = document.createElement('div');
+  div.textContent = text;
+  div.style.cssText = `
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: Inter, sans-serif;
+    white-space: nowrap;
+    pointer-events: none;
+  `;
+  return new CSS2DObject(div);
+}
+```
+
+**Lighting Setup:**
+```typescript
+// Ambient light — fills the scene with soft base illumination
+const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambient);
+
+// Directional light — simulates overhead lighting
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.camera.near = 0.1;
+dirLight.shadow.camera.far = 100;
+dirLight.shadow.camera.left = -50;
+dirLight.shadow.camera.right = 50;
+dirLight.shadow.camera.top = 50;
+dirLight.shadow.camera.bottom = -50;
+scene.add(dirLight);
+
+// Point lights at corners for atmosphere
+const pointLight1 = new THREE.PointLight(0x4fc3f7, 0.5, 30);
+pointLight1.position.set(5, 4, 5);
+scene.add(pointLight1);
+```
+
+**WASD First-Person Controls:**
+```typescript
+const keys: Record<string, boolean> = {};
+document.addEventListener('keydown', e => { keys[e.code] = true; });
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// Mouse look
+let yaw = 0;
+let pitch = 0;
+canvas.addEventListener('click', () => canvas.requestPointerLock());
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement === canvas) {
+    yaw -= e.movementX * 0.002;
+    pitch -= e.movementY * 0.002;
+    pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch)); // clamp up/down
+  }
+});
+
+// In animation loop
+function updateFirstPerson(camera: THREE.Camera) {
+  const speed = 0.08;
+  const direction = new THREE.Vector3();
+
+  if (keys['KeyW'] || keys['ArrowUp'])    direction.z -= 1;
+  if (keys['KeyS'] || keys['ArrowDown'])  direction.z += 1;
+  if (keys['KeyA'] || keys['ArrowLeft'])  direction.x -= 1;
+  if (keys['KeyD'] || keys['ArrowRight']) direction.x += 1;
+
+  direction.normalize().multiplyScalar(speed);
+  direction.applyEuler(new THREE.Euler(0, yaw, 0));
+
+  camera.position.add(direction);
+  camera.position.y = 1.7; // lock eye height
+
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+}
+```
+
+**Orbit Controls (when mode = 'orbit'):**
+```typescript
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(sceneData.floorplan.width / 2, 0, sceneData.floorplan.depth / 2);
+controls.maxPolarAngle = Math.PI / 2.1; // prevent going below floor
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+```
+
+**Animation Loop:**
+```typescript
+function animate() {
+  requestAnimationFrame(animate);
+  if (mode === 'walk') updateFirstPerson(camera);
+  if (mode === 'orbit') controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera); // CSS2DRenderer for labels
+}
+animate();
+```
+
+**Window Resize Handler:**
+```typescript
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  labelRenderer.setSize(window.innerWidth, window.innerHeight);
+});
+```
+
+---
+
+### 5.6 Share Functionality
+
+When the user clicks the "Share" button:
+
+```typescript
+const handleShare = async () => {
+  const url = window.location.href; // e.g. https://yourdomain.com/scene/{sceneId}
+  await navigator.clipboard.writeText(url);
+  setShareTooltip('Link copied!');
+  setTimeout(() => setShareTooltip('Share'), 2000);
+};
+```
+
+The scene is permanently stored in Vultr Object Storage, so the URL works forever. Anyone who opens the URL gets the full 3D scene loaded.
+
+---
+
+### 5.7 Required npm Packages (Frontend)
 
 ```json
 {
-  "name": "designpr-playwright-service",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node index.ts"
-  },
   "dependencies": {
-    "express": "^4.19.2",
-    "playwright": "^1.45.0"
-  },
-  "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.14.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.5.0"
+    "next": "14.2.0",
+    "react": "18.3.0",
+    "react-dom": "18.3.0",
+    "three": "^0.165.0",
+    "typescript": "5.4.0",
+    "@types/three": "^0.165.0",
+    "tailwindcss": "^3.4.0",
+    "uuid": "^9.0.0",
+    "@types/uuid": "^9.0.0"
   }
-}
-```
-
-### Playwright Service (`playwright-service/index.ts`)
-
-```typescript
-import express from "express"
-import { takeScreenshots } from "./screenshot"
-
-const app = express()
-app.use(express.json({ limit: "10mb" }))
-
-// Auth middleware — reject requests without the shared secret
-app.use((req, res, next) => {
-  const secret = req.headers["x-service-secret"]
-  if (secret !== process.env.PLAYWRIGHT_SERVICE_SECRET) {
-    return res.status(401).json({ error: "Unauthorized" })
-  }
-  next()
-})
-
-app.get("/health", (_req, res) => res.json({ ok: true }))
-
-app.post("/screenshot", async (req, res) => {
-  const { url, jobId, type } = req.body as {
-    url: string
-    jobId: string
-    type: "before" | "after"
-  }
-
-  if (!url || !jobId || !type) {
-    return res.status(400).json({ error: "url, jobId, and type are required" })
-  }
-
-  try {
-    const screenshots = await takeScreenshots(url, jobId, type)
-    // Return buffers as base64 strings so they travel over HTTP cleanly
-    res.json({
-      screenshots: screenshots.map(s => ({
-        name: s.name,
-        data: s.buffer.toString("base64"),
-      })),
-    })
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error("[screenshot]", message)
-    res.status(500).json({ error: message })
-  }
-})
-
-const PORT = process.env.PORT ?? 3001
-app.listen(PORT, () => console.log(`Playwright service running on port ${PORT}`))
-```
-
-### Screenshot Logic (`playwright-service/screenshot.ts`)
-
-```typescript
-import { chromium } from "playwright"
-import type { ScreenshotResult } from "../lib/types"
-
-export async function takeScreenshots(
-  url: string,
-  _jobId: string,
-  type: "before" | "after"
-): Promise<ScreenshotResult[]> {
-  const browser = await chromium.launch({ headless: true })
-  const results: ScreenshotResult[] = []
-
-  try {
-    // Desktop screenshot (1440×900)
-    const desktopPage = await browser.newPage()
-    await desktopPage.setViewportSize({ width: 1440, height: 900 })
-    await desktopPage.goto(url, { waitUntil: "networkidle", timeout: 30_000 })
-    await desktopPage.waitForTimeout(2000) // let animations settle
-
-    const desktopBuffer = await desktopPage.screenshot({ fullPage: true, type: "png" })
-    results.push({ name: `${type}-desktop`, buffer: Buffer.from(desktopBuffer) })
-    await desktopPage.close()
-
-    // Mobile screenshot (390×844 — iPhone 14 Pro viewport)
-    const mobilePage = await browser.newPage()
-    await mobilePage.setViewportSize({ width: 390, height: 844 })
-    await mobilePage.goto(url, { waitUntil: "networkidle", timeout: 30_000 })
-    await mobilePage.waitForTimeout(2000)
-
-    const mobileBuffer = await mobilePage.screenshot({ fullPage: true, type: "png" })
-    results.push({ name: `${type}-mobile`, buffer: Buffer.from(mobileBuffer) })
-    await mobilePage.close()
-  } finally {
-    await browser.close()
-  }
-
-  return results
-}
-```
-
-### Triggering Screenshots from Next.js (`lib/screenshot.ts`)
-
-```typescript
-import { uploadScreenshot } from "./vultr-storage"
-
-interface RemoteScreenshot {
-  name: string
-  data: string // base64 encoded PNG
-}
-
-export async function captureScreenshots(
-  deployedUrl: string,
-  jobId: string,
-  type: "before" | "after"
-): Promise<string[]> {
-  const response = await fetch(`${process.env.PLAYWRIGHT_SERVICE_URL}/screenshot`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-service-secret": process.env.PLAYWRIGHT_SERVICE_SECRET!,
-    },
-    body: JSON.stringify({ url: deployedUrl, jobId, type }),
-  })
-
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`Playwright service error ${response.status}: ${err}`)
-  }
-
-  const { screenshots } = (await response.json()) as { screenshots: RemoteScreenshot[] }
-
-  // Upload each screenshot to Vultr Object Storage and return public URLs
-  return Promise.all(
-    screenshots.map(s => {
-      const buffer = Buffer.from(s.data, "base64")
-      return uploadScreenshot(jobId, `${s.name}.png`, buffer)
-    })
-  )
 }
 ```
 
 ---
 
-## Deployment Helpers
+## 6. Person 3 — Vultr Infrastructure
 
-The pipeline needs a live URL to pass to Playwright. The two approaches are:
+**Your responsibility:** All Vultr services — reconfiguring the existing VPS, Object Storage, and PostgreSQL for this project, and setting up the Firewall and Load Balancer. You also handle deployment of the Next.js app.
 
-### Option A — Vercel Preview Deploys (recommended for hackathon speed)
+**Goal:** By Hour 4, every other person should have working connection strings and can connect to your infrastructure.
 
-```typescript
-// lib/deploy-helper.ts
-import type { RepoFile, FileChange } from "./types"
+---
 
-// Deploy original repo files to a Vercel preview deploy and return the URL
-export async function deployForScreenshot(
-  repoFiles: RepoFile[],
-  jobId: string
-): Promise<string> {
-  return deployToVercel(repoFiles, jobId, "before")
-}
+### 6.1 Existing Services to Reconfigure
 
-// Deploy the redesigned version (original files with changes applied on top)
-export async function deployRedesignedForScreenshot(
-  repoFiles: RepoFile[],
-  changes: FileChange[],
-  jobId: string
-): Promise<string> {
-  // Merge: original files overwritten by agent's changed files
-  const changedPaths = new Set(changes.map(c => c.path))
-  const mergedFiles: RepoFile[] = [
-    ...repoFiles.filter(f => !changedPaths.has(f.path)),
-    ...changes.map(c => ({ path: c.path, content: c.content, encoding: "utf-8" as const, size: c.content.length })),
-  ]
-  return deployToVercel(mergedFiles, jobId, "after")
-}
+You have three existing Vultr services. Each needs to be reconfigured for this project specifically.
 
-async function deployToVercel(
-  files: RepoFile[],
-  jobId: string,
-  suffix: string
-): Promise<string> {
-  const VERCEL_TOKEN = process.env.VERCEL_TOKEN!
-  const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID // optional
+**Existing VPS:**
+- Wipe or reconfigure the existing application running on it
+- Install Node.js 20 LTS
+- Install PM2 (process manager)
+- Clone the project repository
+- Set up environment variables
+- Configure Nginx as reverse proxy
 
-  const payload = {
-    name: `designpr-${jobId.slice(0, 8)}-${suffix}`,
-    files: files.map(f => ({
-      file: f.path,
-      data: f.content,
-    })),
-    projectSettings: {
-      framework: "nextjs",
-    },
-    ...(VERCEL_TEAM_ID ? { teamId: VERCEL_TEAM_ID } : {}),
-  }
+**Existing PostgreSQL:**
+- Connect and drop any existing tables/databases from the previous project
+- Create a new database: `floorplan_ai`
+- Create a new user with full access to that database
+- Run the SQL schema from Section 4.1
+- Provide the connection string to Person 1
 
-  const res = await fetch("https://api.vercel.com/v13/deployments", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${VERCEL_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  })
+**Existing Object Storage:**
+- Delete any existing buckets or objects from the previous project
+- Create a new bucket: `floorplan-ai-storage`
+- Set the bucket to allow public reads (for shareable scene URLs)
+- Generate new access key and secret key
+- Note the endpoint URL (format: `https://{region}.vultrobjects.com`)
+- Provide credentials to Person 1
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Vercel deploy failed: ${err}`)
-  }
+---
 
-  const deployment = await res.json()
+### 6.2 VPS Configuration
 
-  // Poll until deployment is ready (max 3 minutes)
-  return waitForDeployment(deployment.id, VERCEL_TOKEN)
-}
+**Step 1 — Connect to VPS:**
+```bash
+ssh root@{YOUR_VPS_IP}
+```
 
-async function waitForDeployment(deploymentId: string, token: string): Promise<string> {
-  const MAX_ATTEMPTS = 36 // 36 × 5s = 3 minutes
-  for (let i = 0; i < MAX_ATTEMPTS; i++) {
-    await new Promise(r => setTimeout(r, 5000))
+**Step 2 — Install Node.js 20:**
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
+sudo apt-get install -y nodejs
+node --version  # should be v20.x.x
+```
 
-    const res = await fetch(`https://api.vercel.com/v13/deployments/${deploymentId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    const data = await res.json()
+**Step 3 — Install PM2:**
+```bash
+npm install -g pm2
+```
 
-    if (data.readyState === "READY") {
-      return `https://${data.url}`
+**Step 4 — Install Nginx:**
+```bash
+sudo apt update
+sudo apt install -y nginx
+```
+
+**Step 5 — Clone Repository:**
+```bash
+cd /var/www
+git clone https://github.com/YOUR_ORG/floorplan-ai.git
+cd floorplan-ai
+npm install
+```
+
+**Step 6 — Create Environment File:**
+```bash
+nano /var/www/floorplan-ai/.env.local
+# Paste all environment variables from Section 8
+```
+
+**Step 7 — Build the Next.js App:**
+```bash
+cd /var/www/floorplan-ai
+npm run build
+```
+
+**Step 8 — Start with PM2:**
+```bash
+pm2 start npm --name "floorplan-ai" -- start
+pm2 save
+pm2 startup  # follow the printed command to enable auto-restart
+```
+
+**Step 9 — Configure Nginx:**
+
+Create the Nginx config file:
+```bash
+sudo nano /etc/nginx/sites-available/floorplan-ai
+```
+
+Paste this configuration:
+```nginx
+server {
+    listen 80;
+    server_name YOUR_VPS_IP;  # replace with IP or domain
+
+    client_max_body_size 20M;  # allow up to 20MB uploads
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 120s;  # allow long AI processing requests
     }
-    if (data.readyState === "ERROR" || data.readyState === "CANCELED") {
-      throw new Error(`Vercel deployment ${deploymentId} failed: ${data.readyState}`)
-    }
-  }
-
-  throw new Error(`Vercel deployment ${deploymentId} timed out after 3 minutes`)
 }
 ```
 
-### Option B — Serve locally from Playwright VPS (more Vultr usage for the pitch)
+Enable the site:
+```bash
+sudo ln -s /etc/nginx/sites-available/floorplan-ai /etc/nginx/sites-enabled/
+sudo nginx -t  # test config
+sudo systemctl reload nginx
+```
 
-For a stronger Vultr story: instead of Vercel, ship the repo files to the Playwright service, have it `npm install && npm run build && npm start` in a temp directory, take screenshots at `localhost:PORT`, then clean up. Add this endpoint to the Playwright service:
+**Step 10 — Verify:**
+```bash
+curl http://YOUR_VPS_IP
+# Should return the Next.js HTML
+```
 
+---
+
+### 6.3 PostgreSQL Configuration
+
+Connect to the Vultr Managed PostgreSQL instance using the admin credentials from the Vultr dashboard.
+
+```bash
+psql "postgresql://admin:{PASSWORD}@{HOST}:{PORT}/defaultdb?sslmode=require"
+```
+
+Run these commands:
+```sql
+-- Create the project database
+CREATE DATABASE floorplan_ai;
+
+-- Create the application user
+CREATE USER floorplan_app WITH PASSWORD 'GENERATE_STRONG_PASSWORD_HERE';
+
+-- Grant privileges
+GRANT ALL PRIVILEGES ON DATABASE floorplan_ai TO floorplan_app;
+
+-- Connect to the new database
+\c floorplan_ai
+
+-- Grant schema privileges
+GRANT ALL ON SCHEMA public TO floorplan_app;
+
+-- Now run the schema from Section 4.1
+-- (paste the full CREATE TABLE statements here)
+```
+
+**Connection string format for Person 1:**
+```
+DATABASE_URL=postgresql://floorplan_app:{PASSWORD}@{HOST}:{PORT}/floorplan_ai?sslmode=require
+```
+
+---
+
+### 6.4 Object Storage Configuration
+
+In the Vultr Control Panel:
+
+1. Navigate to Object Storage
+2. Delete or empty any existing buckets from the previous project
+3. Create a new bucket named: `floorplan-ai-storage`
+4. Region: choose the same region as your VPS to minimize latency
+5. After creation, go to bucket settings and set Access Control to "Public Read"
+6. Navigate to Object Storage → Access Keys
+7. Generate a new access key pair
+8. Copy the Access Key, Secret Key, and Endpoint URL
+
+**Credentials format for Person 1:**
+```
+VULTR_STORAGE_ENDPOINT=https://ewr1.vultrobjects.com
+VULTR_STORAGE_BUCKET=floorplan-ai-storage
+VULTR_STORAGE_ACCESS_KEY=your_access_key_here
+VULTR_STORAGE_SECRET_KEY=your_secret_key_here
+```
+
+---
+
+### 6.5 Firewall Configuration
+
+In the Vultr Control Panel, navigate to Firewall and create a new Firewall Group called `floorplan-ai-firewall`.
+
+Add these rules:
+
+| Protocol | Port | Source | Description |
+|---|---|---|---|
+| TCP | 22 | Your team's IP addresses only | SSH access |
+| TCP | 80 | 0.0.0.0/0 | HTTP traffic |
+| TCP | 443 | 0.0.0.0/0 | HTTPS traffic |
+| TCP | 3000 | 127.0.0.1/32 | Next.js internal only |
+
+**Block everything else** — no other inbound ports should be open. This ensures the raw Node.js port (3000) is never directly accessible from outside; all traffic goes through Nginx.
+
+Attach this Firewall Group to the VPS instance in the VPS settings.
+
+---
+
+### 6.6 Load Balancer Configuration
+
+In the Vultr Control Panel, navigate to Load Balancers and create a new Load Balancer.
+
+**Settings:**
+- Region: same as VPS
+- Label: `floorplan-ai-lb`
+- Protocol: HTTP
+- Port: 80
+- Backend Protocol: HTTP
+- Backend Port: 80 (Nginx)
+- Health Check Path: `/api/health` (a simple route that returns 200 OK)
+- Health Check Interval: 10 seconds
+
+**Add your VPS as a backend instance.**
+
+**Health check route** — add this to the API routes (quick task, tell Person 1):
 ```typescript
-// playwright-service/local-deploy.ts  (add to the service)
-import { execSync } from "child_process"
-import * as fs from "fs"
-import * as path from "path"
-import * as os from "os"
-
-export async function serveLocally(
-  files: Array<{ path: string; content: string }>,
-  port: number
-): Promise<() => void> {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "designpr-"))
-
-  for (const file of files) {
-    const dest = path.join(tmpDir, file.path)
-    fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, file.content, "utf-8")
-  }
-
-  execSync("npm install --prefer-offline", { cwd: tmpDir, stdio: "pipe" })
-  execSync("npm run build", { cwd: tmpDir, stdio: "pipe" })
-
-  const child = require("child_process").spawn("npm", ["start", "--", "-p", String(port)], {
-    cwd: tmpDir,
-    detached: true,
-    stdio: "ignore",
-  })
-  child.unref()
-
-  // Give the server 5 seconds to start
-  await new Promise(r => setTimeout(r, 5000))
-
-  // Return cleanup function
-  return () => {
-    try { process.kill(-child.pid) } catch {}
-    fs.rmSync(tmpDir, { recursive: true, force: true })
-  }
+// app/api/health/route.ts
+export async function GET() {
+  return new Response('OK', { status: 200 });
 }
+```
+
+After setup, the Load Balancer will provide an IP address. Point your demo domain or use that IP as the public endpoint. Update the Nginx `server_name` to match.
+
+---
+
+### 6.7 Deployment Updates
+
+Every time the team pushes code, run these commands on the VPS to deploy:
+
+```bash
+cd /var/www/floorplan-ai
+git pull origin main
+npm install
+npm run build
+pm2 restart floorplan-ai
+```
+
+Set up a deployment script at `/var/www/deploy.sh`:
+```bash
+#!/bin/bash
+set -e
+cd /var/www/floorplan-ai
+git pull origin main
+npm install --production
+npm run build
+pm2 restart floorplan-ai
+echo "Deployment complete at $(date)"
+```
+
+```bash
+chmod +x /var/www/deploy.sh
+```
+
+Team members can trigger a deploy by running:
+```bash
+ssh root@{VPS_IP} '/var/www/deploy.sh'
 ```
 
 ---
 
-## PR Creation
+## 7. Person 4 — Demo & Polish
 
-See `lib/github.ts` above for the full `openDesignPR` implementation.
+**Your time is limited. These are your tasks in priority order. Do not move to the next task until the current one is complete.**
 
-### Full Pipeline Orchestrator (`lib/pipeline.ts`)
+---
 
-```typescript
-import { prisma } from "./prisma"
-import { bb } from "./backboard"
-import { fetchRepoFiles } from "./github"
-import { analyzeScreenshot, buildVisionSummary } from "./vision"
-import { captureScreenshots } from "./screenshot"
-import { deployForScreenshot, deployRedesignedForScreenshot } from "./deploy-helper"
-import { runAnalyzer } from "./agents/analyzer"
-import { runBriefGenerator } from "./agents/brief"
-import { runRedesign } from "./agents/redesign"
-import { runCritic } from "./agents/critic"
-import { runReviser } from "./agents/reviser"
-import { openDesignPR } from "./github"
-import { withRetry } from "./retry"
-import type { FileChange } from "./types"
+### Task 1 — BearHacks Floor Plan Preparation (Priority: Critical)
 
-export async function runPipeline(
-  jobId: string,
-  repoFullName: string,
-  userNote: string,
-  githubAccessToken: string
-) {
-  const [owner, repo] = repoFullName.split("/")
+Obtain the SSU Atrium floor plan. If you do not have a digital copy:
+- Search the university website or email the event organizers
+- Take a clear overhead photo if a physical copy is available
+- As a last resort, create a simplified hand-drawn version and photograph it — Gemini can still extract the geometry
 
-  const updateStatus = (status: string, step: string) =>
-    prisma.job.update({ where: { id: jobId }, data: { status, currentStep: step } })
+Save the floor plan as: `public/demo/bearhacks-floorplan.jpg`
 
-  try {
-    // ── STEP 1: Clone and read repo files ───────────────────────────────
-    await updateStatus("running", "Cloning repository")
-    const repoFiles = await withRetry(() => fetchRepoFiles(owner, repo, githubAccessToken))
+Requirements for the image:
+- Clear, readable — walls and rooms visible
+- Minimum 800x600 pixels
+- JPG or PNG format
+- Under 5MB
 
-    // ── STEP 2: Capture BEFORE screenshots ──────────────────────────────
-    await updateStatus("running", "Capturing current UI screenshots")
-    const deployedUrl = await deployForScreenshot(repoFiles, jobId)
-    const beforeScreenshotUrls = await captureScreenshots(deployedUrl, jobId, "before")
+---
 
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { beforeScreenshots: beforeScreenshotUrls },
-    })
+### Task 2 — Demo Scene Pre-generation (Priority: Critical)
 
-    // ── STEP 3: Google Cloud Vision — analyze BEFORE screenshots ────────
-    await updateStatus("running", "Analyzing with Google Cloud Vision")
-    const visionResults = await Promise.all(
-      beforeScreenshotUrls.map(url => withRetry(() => analyzeScreenshot(url)))
-    )
-    const visionSummary = visionResults.map(buildVisionSummary).join("\n\n")
+Once Person 1 has the pipeline working and Person 3 has infrastructure live, run the demo seed script:
 
-    // ── STEP 4: Analyzer Agent (Gemma 4) ────────────────────────────────
-    await updateStatus("running", "Analyzing codebase structure")
-    const analysis = await withRetry(() => runAnalyzer(repoFiles, visionSummary))
-    await bb.threads.setData(jobId, "repo_analysis", analysis)
+```bash
+cd /var/www/floorplan-ai
+npx ts-node scripts/seed-demo.ts
+```
 
-    // ── STEP 5: Brief Generator Agent (Gemma 4) ─────────────────────────
-    await updateStatus("running", "Generating design brief")
-    const brief = await withRetry(() => runBriefGenerator(analysis, visionSummary, userNote))
-    await bb.threads.setData(jobId, "design_brief", brief)
+This generates the BearHacks scene in advance. Write down the Scene ID it outputs. This is your demo URL:
+```
+http://{YOUR_DOMAIN}/scene/{SCENE_ID}
+```
 
-    // ── STEP 6: Redesign Agent (GPT-4o) ────────────────────────────────
-    await updateStatus("running", "Redesigning UI components")
-    const uiFiles = repoFiles.filter(f => analysis.uiFiles.includes(f.path))
-    const fileChanges: FileChange[] = await withRetry(
-      () => runRedesign(uiFiles, brief, analysis),
-      { maxAttempts: 2, delayMs: 3000 } // GPT-4o is expensive — only retry once
-    )
-    await bb.threads.setData(jobId, "file_changes", fileChanges)
+Test the scene thoroughly:
+- Walk through it in first-person
+- Switch to orbit mode and inspect from above
+- Verify hacking stations are along walls
+- Verify sponsor booths are in the center
+- Verify the ceremony stage is at the front
+- Verify all labels are readable
 
-    // ── STEP 7: Capture AFTER screenshots ───────────────────────────────
-    await updateStatus("running", "Rendering redesigned output")
-    const redesignedUrl = await deployRedesignedForScreenshot(repoFiles, fileChanges, jobId)
-    const afterScreenshotUrls = await captureScreenshots(redesignedUrl, jobId, "after")
+If the AI placement is off, re-run the seed script — it generates a new scene each time.
 
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { afterScreenshots: afterScreenshotUrls },
-    })
+---
 
-    // ── STEP 8: Vision analysis of AFTER screenshots ────────────────────
-    await updateStatus("running", "Running design critique")
-    const afterVisionResults = await Promise.all(
-      afterScreenshotUrls.map(url => withRetry(() => analyzeScreenshot(url)))
-    )
-    const afterVisionSummary = afterVisionResults.map(buildVisionSummary).join("\n\n")
+### Task 3 — Demo Rehearsal Script (Priority: High)
 
-    // ── STEP 9: Critic Agent (GPT-4o) ───────────────────────────────────
-    const critique = await withRetry(() => runCritic(fileChanges, brief, afterVisionSummary))
-    await bb.threads.setData(jobId, "critique", critique)
+Write a 3-minute verbal demo script. Practice it until you can deliver it without notes.
 
-    // ── STEP 10: Reviser Agent if needed (GPT-4o) ────────────────────────
-    let finalChanges = fileChanges
-    if (!critique.passedReview) {
-      await updateStatus("running", "Applying revisions")
-      finalChanges = await withRetry(
-        () => runReviser(fileChanges, critique),
-        { maxAttempts: 2, delayMs: 3000 }
-      )
-    }
+```
+"We're FloorPlan AI. The problem: configuring any space — 
+an event, a hackathon, a factory — requires expensive software, 
+technical expertise, or just your imagination staring at a flat PDF.
 
-    // ── STEP 11: Open GitHub PR ──────────────────────────────────────────
-    await updateStatus("running", "Opening pull request")
-    const branchName = `designpr/${jobId.slice(0, 8)}`
-    const prUrl = await withRetry(() =>
-      openDesignPR({
-        accessToken: githubAccessToken,
-        owner,
-        repo,
-        branchName,
-        beforeScreenshots: beforeScreenshotUrls.map((url, i) => ({
-          url,
-          pageName: `View ${i + 1}`,
-        })),
-        afterScreenshots: afterScreenshotUrls.map((url, i) => ({
-          url,
-          pageName: `View ${i + 1}`,
-        })),
-        designBrief: brief,
-        changes: finalChanges,
-      })
-    )
+We fix that. Upload any floor plan. Describe what you need in plain English. 
+Walk through your configured space in 3D. In seconds.
 
-    // ── STEP 12: Mark job complete ───────────────────────────────────────
-    await prisma.job.update({
-      where: { id: jobId },
-      data: {
-        status: "completed",
-        currentStep: "Done",
-        afterScreenshots: afterScreenshotUrls,
-        prUrl,
-        designBrief: brief,
-      },
-    })
-  } catch (err) {
-    await updateStatus("failed", "Error")
-    throw err
-  }
-}
+Here's the room you're sitting in right now. [show BearHacks floor plan]
+
+We type: 'hackathon with hacking stations along the walls, 
+sponsor booths in the center, and a ceremony stage at the front.'
+
+[navigate to pre-generated scene]
+
+There it is. The SSU Atrium — configured for BearHacks — in 3D. 
+We can walk through it, look around, see every object labeled.
+
+This works for any use case. Events, offices, factories. 
+Same product, any space, any configuration, any use case.
+
+Built on Vultr compute, Vultr Object Storage, Vultr PostgreSQL. 
+Every scene is shareable — anyone on your team can walk through it 
+from anywhere in the world via a single link.
+
+That's FloorPlan AI."
 ```
 
 ---
 
-## Database Schema
+### Task 4 — Backup Demo Preparation (Priority: High)
 
-```prisma
-// prisma/schema.prisma
+Prepare a fully offline backup in case the live internet connection fails during the demo.
 
-generator client {
-  provider = "prisma-client-js"
-}
+1. After Task 2, export the pre-generated scene JSON locally
+2. Create a static HTML file that embeds the scene JSON directly and renders it with Three.js from a CDN
+3. Host it via `npx serve` or Python's `http.server` locally
+4. Test it works with no internet by disconnecting from WiFi
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+This is your failsafe. If anything breaks during the live demo, open this file.
 
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  accounts      Account[]
-  sessions      Session[]
-  jobs          Job[]
-  createdAt     DateTime  @default(now())
-}
+---
 
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text  // GitHub OAuth access token — used by pipeline
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+### Task 5 — Demo Video Recording (Priority: Medium, if time allows)
 
-  @@unique([provider, providerAccountId])
-}
+Record a 60-90 second screen recording showing:
+1. The landing page (5 seconds)
+2. Uploading the BearHacks floor plan (10 seconds)
+3. Typing the use case prompt (10 seconds)
+4. The progress indicators running (10 seconds)
+5. The 3D scene loading (5 seconds)
+6. Walking through the space in first-person (30 seconds)
+7. Switching to orbit view (15 seconds)
+8. Clicking the share button (5 seconds)
 
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
+Use QuickTime (Mac) or OBS (Windows/Linux). Export as MP4. Submit as required by BearHacks.
 
-model Job {
-  id                String   @id @default(cuid())
-  userId            String
-  user              User     @relation(fields: [userId], references: [id])
-  repoFullName      String   // "owner/repo"
-  userNote          String?
-  status            String   @default("pending")  // pending | running | completed | failed
-  currentStep       String?
-  beforeScreenshots String[] // Vultr Object Storage public URLs
-  afterScreenshots  String[] // Vultr Object Storage public URLs
-  prUrl             String?
-  designBrief       Json?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+---
 
-  @@index([userId])
-  @@index([status])
-}
+## 8. Environment Variables
 
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
+Create a `.env.local` file in the project root. Person 3 provides the Vultr values. Person 1 provides the Gemini API key. All team members need a copy of this file.
 
-  @@unique([identifier, token])
-}
+```bash
+# ==========================================
+# GEMINI API
+# ==========================================
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# ==========================================
+# VULTR POSTGRESQL
+# ==========================================
+DATABASE_URL=postgresql://floorplan_app:PASSWORD@HOST:PORT/floorplan_ai?sslmode=require
+
+# ==========================================
+# VULTR OBJECT STORAGE
+# ==========================================
+VULTR_STORAGE_ENDPOINT=https://ewr1.vultrobjects.com
+VULTR_STORAGE_BUCKET=floorplan-ai-storage
+VULTR_STORAGE_ACCESS_KEY=your_access_key
+VULTR_STORAGE_SECRET_KEY=your_secret_key
+
+# ==========================================
+# APP CONFIG
+# ==========================================
+NEXT_PUBLIC_APP_URL=http://YOUR_VPS_IP_OR_DOMAIN
+NODE_ENV=production
 ```
 
 ---
 
-## API Routes
+## 9. Build Order & Milestones
 
-### Job Status (`app/api/jobs/[jobId]/route.ts`)
+**Follow this order exactly. Every milestone must be verified before moving forward.**
 
-```typescript
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"
-import { prisma } from "@/lib/prisma"
+### Hours 1–2: Foundation
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { jobId: string } }
-) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 })
-  }
+- [ ] **All:** Clone repo, install dependencies, copy env file
+- [ ] **Person 1:** Write `types/scene.ts` — the full schema. This is reviewed by everyone before anything else is built.
+- [ ] **Person 3:** Reconfigure existing Vultr services. Have PostgreSQL connection string and Object Storage credentials ready by Hour 2.
+- [ ] **Person 2:** Set up Next.js project structure. Create all empty page and component files with placeholder content.
 
-  const job = await prisma.job.findUnique({
-    where: { id: params.jobId, userId: session.user.id },
-  })
-
-  if (!job) {
-    return Response.json({ error: "Not found" }, { status: 404 })
-  }
-
-  return Response.json(job)
-}
-```
+**Milestone:** Connection strings work. Schema is agreed upon. Everyone can run `npm run dev`.
 
 ---
 
-## Error Handling & Retry Utilities
+### Hours 3–6: Core Pipeline
 
-### Retry Helper (`lib/retry.ts`)
+- [ ] **Person 1:** Implement `lib/db.ts`, `lib/storage.ts`, `lib/gemini.ts`
+- [ ] **Person 1:** Implement Agent 1. Test it against a sample floor plan image. Verify it returns valid FloorPlan JSON.
+- [ ] **Person 1:** Implement Agent 2. Test it with Agent 1's output. Verify object placement JSON.
+- [ ] **Person 1:** Implement Agent 3 + full pipeline in `lib/backboard.ts`
+- [ ] **Person 1:** Implement all three API routes
+- [ ] **Person 3:** VPS running, Nginx configured, app deployed
 
-All agent and external API calls should be wrapped with this so transient failures (rate limits, network blips) don't kill the whole pipeline.
-
-```typescript
-interface RetryOptions {
-  maxAttempts?: number
-  delayMs?: number
-  backoffMultiplier?: number
-}
-
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  options: RetryOptions = {}
-): Promise<T> {
-  const { maxAttempts = 3, delayMs = 1500, backoffMultiplier = 2 } = options
-
-  let lastError: unknown
-  let currentDelay = delayMs
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn()
-    } catch (err) {
-      lastError = err
-      if (attempt === maxAttempts) break
-
-      console.warn(`[retry] Attempt ${attempt}/${maxAttempts} failed. Retrying in ${currentDelay}ms...`, err)
-      await new Promise(r => setTimeout(r, currentDelay))
-      currentDelay *= backoffMultiplier
-    }
-  }
-
-  throw lastError
-}
-
-// Safe JSON parse — returns null instead of throwing
-export function safeParseJSON<T>(text: string): T | null {
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    return null
-  }
-}
-```
+**Milestone:** POST to `/api/upload` with a floor plan image and use case text returns a job ID. Polling `/api/job/{id}` shows status progressing. Scene JSON appears in Object Storage.
 
 ---
 
-## Demo Flow
+### Hours 7–12: 3D Rendering
 
-**This is the exact sequence to practice for stage:**
+- [ ] **Person 2:** Implement `components/ThreeScene.tsx` — floor, walls, and objects rendering from scene JSON
+- [ ] **Person 2:** WASD navigation and mouse look working
+- [ ] **Person 2:** Orbit controls working
+- [ ] **Person 2:** Object labels rendering
+- [ ] **Person 2:** Scene viewer page (`/scene/[sceneId]`) loading scene from API
 
-1. Open the app live — judges see the landing page. It looks stunning.
-2. "Let me connect a GitHub repo." — GitHub OAuth in one click.
-3. Select a pre-prepared vibe coded repo. Add note: "A SaaS analytics dashboard."
-4. Hit "Run DesignPR."
-5. Show the job progress page — agents ticking through steps in real time.
-6. While it runs, explain what each agent is doing.
-7. PR appears on GitHub. Open it.
-8. Show the before/after screenshots in the PR description.
-9. "Let's merge it." Hit merge.
-10. Done.
-
-**Pre-bake a demo repo for stage.** Do not use a random real repo. Build a deliberately ugly vibe coded Next.js app with all the anti-patterns (default Shadcn, gray everything, no animations, poor typography) and use that. You control the before. Make it as ugly as possible so the after hits hard.
+**Milestone:** Opening `/scene/{sceneId}` shows a 3D scene you can walk through. Objects are placed correctly. Labels are visible.
 
 ---
 
-## Critical Notes
+### Hours 13–16: UI & Polish
 
-**The prompt is the product.** Spend the first 8-10 hours iterating on the redesign agent system prompt until the before/after difference is genuinely shocking. Everything else is plumbing.
+- [ ] **Person 2:** Landing page — complete with all sections, animations, fully responsive
+- [ ] **Person 2:** Upload page — drag and drop working, preview showing, form submitting
+- [ ] **Person 2:** Processing page — real-time progress polling, step indicators, animations
+- [ ] **Person 3:** Firewall configured, Load Balancer live
+- [ ] **Person 4:** BearHacks floor plan image ready in `public/demo/`
 
-**Run the full pipeline end-to-end first, ugly.** Get a PR opening with any output at all before worrying about design quality. Then improve the prompts.
+**Milestone:** Full user flow works end-to-end. Upload → processing → 3D scene. Landing page is beautiful.
 
-**Do not use 21st.dev Magic MCP at runtime.** Use it during your build for inspiration. Bake the patterns into your prompt. Remove the runtime dependency.
+---
 
-**The demo app has to be ugly on purpose.** Build a fake SaaS dashboard that violates every anti-pattern. Gray backgrounds, default Shadcn components, Inter at 400 weight, no animations, cramped spacing. Make judges wince when they see the before.
+### Hours 17–20: Demo Preparation
 
-**Your own app UI must be exceptional.** You are entering Best UI/UX. Your landing page is judged. Do not let it look vibe coded. Use distinctive fonts, strong animations, generous spacing. Eat your own cooking.
+- [ ] **Person 4:** Run `seed-demo.ts`. Demo scene URL confirmed working.
+- [ ] **Person 4:** Walk through demo scene. Verify layout is correct for BearHacks.
+- [ ] **All:** Full end-to-end run-through with a different floor plan to verify it works for new inputs
+- [ ] **Person 4:** Demo rehearsal complete
+- [ ] **Person 4:** Backup offline demo ready
+- [ ] **Person 4:** Demo video recorded if time allows
 
-**Fix the PR body template literal bug (was in original).** The original guide had `` `afterScreenshots[i].url}` `` (missing `${`). This is fixed in the `buildPRBody` function above — always access `afterScreenshots[i]` via a named variable before the template literal.
+**Milestone:** You can demo the full product in under 3 minutes without notes. The BearHacks scene loads instantly. The judges see their own room in 3D.
 
-**Backboard SDK availability.** If the Backboard npm package isn't published yet when you're building, the REST client in `lib/backboard.ts` above is a drop-in replacement that works against their API directly. Swap it for the SDK once available.
+---
 
-**`forcePathStyle: true` on Vultr S3 client.** Without this flag, the AWS SDK will construct path-style URLs incorrectly for non-AWS endpoints and all uploads will 404. This is in `lib/vultr-storage.ts` above.
+## 10. Inter-Person Dependencies
 
-**Vultr story for the pitch:** "Every agent run happens on Vultr. The screenshots are taken by a headless browser running on Vultr compute. Every image is stored on Vultr Object Storage. Every job is tracked in our Vultr Postgres database. When multiple users run jobs simultaneously, Vultr's load balancer distributes the work. This is production infrastructure, not a laptop project."
+This table shows who is blocked waiting for whom. Coordinate on these first.
 
-**Backboard story for the pitch:** "Backboard manages the shared memory across all five agents. The design brief created in step 2 is automatically available to the critique agent in step 4 — no manual context passing. If we wanted to add a sixth agent, we just add it to the thread."
+| Who is blocked | Waiting for | What they need | By when |
+|---|---|---|---|
+| Person 1 | Person 3 | DATABASE_URL connection string | Hour 2 |
+| Person 1 | Person 3 | Vultr Object Storage credentials | Hour 2 |
+| Person 2 | Person 1 | `/api/upload` route working | Hour 6 |
+| Person 2 | Person 1 | `/api/job/[jobId]` route working | Hour 6 |
+| Person 2 | Person 1 | `/api/scene/[sceneId]` route working | Hour 6 |
+| Person 2 | Person 1 | Example scene JSON to develop against | Hour 4 |
+| Person 4 | Person 1 + 3 | Pipeline + infrastructure fully working | Hour 16 |
+| Person 4 | Person 2 | Scene viewer showing correct demo layout | Hour 16 |
 
-**Google Cloud Vision story for the pitch:** "Vision API is the eyes of the entire system. It tells our agents what the UI actually looks like — not what the code says it should look like. It detects the real color palette, identifies UI elements, understands the layout structure. Without Vision, our critique agent is flying blind."
+**For Person 2, Hour 4 unblock:** Person 1 should produce one valid example scene JSON file and commit it to the repo at `public/demo/example-scene.json`. Person 2 loads this hardcoded file locally to develop the Three.js renderer without waiting for the full pipeline.
 
-**Gemma 4 story for the pitch:** "We use Gemma 4 for the lightweight analysis steps and GPT-4o for the creative reasoning steps. Not every part of the pipeline needs a frontier model. Routing intelligently keeps costs down and speed up."
+---
+
+*This document was created for BearHacks. Every section is authoritative. Do not deviate from the JSON schema in Section 2. If you need to make changes, update this document first so all agents and team members are in sync.*

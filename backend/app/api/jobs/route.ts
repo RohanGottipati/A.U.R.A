@@ -1,37 +1,39 @@
-import type { CreateJobPayload } from "@/lib/types";
+import { requireUser } from "@/lib/auth";
 import { jsonWithCors, optionsResponse } from "@/lib/http";
-import { createMockJob, listMockJobs } from "@/lib/mock-jobs";
+import { toJobListItemResponse } from "@/lib/jobs";
+import { prisma } from "@/lib/prisma";
 
 /**
  * GET /api/jobs – List all jobs for the authenticated user.
- *
- * TODO (Phase 2): Wire up Prisma + NextAuth session to return real data.
  */
 export async function GET() {
-  return jsonWithCors({ jobs: listMockJobs() });
-}
+  const user = await requireUser();
 
-/**
- * POST /api/jobs – Create a new redesign job.
- *
- * Expects JSON body: { repoUrl: string; branch?: string }
- *
- * TODO (Phase 2): Validate auth, persist via Prisma, kick off pipeline.
- */
-export async function POST(request: Request) {
-  const body = (await request.json()) as Partial<CreateJobPayload>;
-
-  if (!body.repoUrl?.trim()) {
-    return jsonWithCors({ error: "repoUrl is required" }, { status: 400 });
+  if (!user) {
+    return jsonWithCors({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return jsonWithCors(
-    createMockJob({
-      repoUrl: body.repoUrl.trim(),
-      branch: body.branch?.trim() || undefined,
-    }),
-    { status: 201 },
-  );
+  try {
+    const jobs = await prisma.job.findMany({
+      where: {
+        userId: user.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return jsonWithCors({
+      jobs: jobs.map(toJobListItemResponse),
+    });
+  } catch (error) {
+    console.error("[jobs] Failed to list jobs.", {
+      userId: user.id,
+      error,
+    });
+
+    return jsonWithCors({ error: "Failed to fetch jobs." }, { status: 500 });
+  }
 }
 
 export async function OPTIONS() {

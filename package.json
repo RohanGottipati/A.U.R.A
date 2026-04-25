@@ -14,5 +14,9 @@
     "start": "npm run start:backend & npm run start:frontend & wait",
     "start:frontend": "npm run start -w frontend",
     "start:backend": "npm run start -w backend"
+  },
+  "dependencies": {
+    "@next-auth/prisma-adapter": "^1.0.7",
+    "next-auth": "^4.24.14"
   }
 }

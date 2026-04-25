@@ -14,6 +14,11 @@
 /out/
 **/.next/
 **/out/
+/.next-dev/
+/.next-prod/
+**/.next-dev/
+**/.next-prod/
+**/.next.stale-*/
 
 # production
 /build
