@@ -21,6 +21,10 @@ const ROOM_TINT_COLORS: Record<string, number> = {
 interface Props {
   sceneData: SceneFile;
   mode: 'walk' | 'orbit';
+  objects: SceneObject[];
+  selectedId: string | null;
+  onSelectObject: (id: string | null) => void;
+  onMoveObject: (id: string, x: number, y: number) => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -272,7 +276,7 @@ function createObjectMesh(obj: SceneObject): THREE.Group {
 /*  Main component                                                            */
 /* -------------------------------------------------------------------------- */
 
-export default function ThreeScene({ sceneData, mode }: Props) {
+export default function ThreeScene({ sceneData, mode, objects, selectedId, onSelectObject, onMoveObject }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -286,6 +290,16 @@ export default function ThreeScene({ sceneData, mode }: Props) {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const yawRef = useRef(0);
   const pitchRef = useRef(0);
+
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const meshMap = useRef<Map<string, THREE.Group>>(new Map());
+  const selectedHelper = useRef<THREE.BoxHelper | null>(null);
+  const isDragging = useRef(false);
+  const dragObjectId = useRef<string | null>(null);
+  const floorPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0));
+  const dragPoint = useRef(new THREE.Vector3());
+  const dragRaycaster = useRef(new THREE.Raycaster());
+  const dragMouse = useRef(new THREE.Vector2());
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -310,6 +324,7 @@ export default function ThreeScene({ sceneData, mode }: Props) {
 
     /* ---------------- Scene ---------------- */
     const scene = new THREE.Scene();
+    sceneRef.current = scene;
     scene.background = new THREE.Color(0x0c0d18);
     scene.fog = new THREE.Fog(0x0c0d18, 30, 110);
 
@@ -361,7 +376,14 @@ export default function ThreeScene({ sceneData, mode }: Props) {
     );
     scene.add(wallsGroup);
 
-    sceneData.configuration.objects.forEach((obj) => scene.add(createObjectMesh(obj)));
+    // Seed initial objects into meshMap (reactive effect handles subsequent updates)
+    objects.forEach((obj) => {
+      const group = buildObjectMesh(obj);
+      group.userData.objectId = obj.id;
+      group.userData.objSize = { w: obj.width, d: obj.depth, h: obj.height };
+      scene.add(group);
+      meshMap.current.set(obj.id, group);
+    });
 
     /* ---------------- Lighting (kept lean for perf) ---------------- */
     scene.add(new THREE.AmbientLight(0xffffff, 0.4));
@@ -500,6 +522,67 @@ export default function ThreeScene({ sceneData, mode }: Props) {
     document.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('click', onCanvasClick);
 
+    /* ---------------- Click-to-select + Drag-to-move ---------------- */
+    const clickRaycaster = new THREE.Raycaster();
+    const clickMouse = new THREE.Vector2();
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (modeRef.current === 'walk') return;
+      const rect = canvas.getBoundingClientRect();
+      clickMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      clickMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      const cam = cameraRef.current;
+      if (!cam) return;
+      clickRaycaster.setFromCamera(clickMouse, cam);
+
+      const allGroups = Array.from(meshMap.current.values());
+      const intersects = clickRaycaster.intersectObjects(allGroups, true);
+
+      if (intersects.length > 0) {
+        let node: THREE.Object3D | null = intersects[0].object;
+        while (node && !node.userData.objectId) {
+          node = node.parent;
+        }
+        const hitId = node?.userData.objectId as string | undefined;
+        if (hitId) {
+          onSelectObject(hitId);
+          isDragging.current = true;
+          dragObjectId.current = hitId;
+          if (orbitControlsRef.current) orbitControlsRef.current.enabled = false;
+        }
+      } else {
+        onSelectObject(null);
+      }
+    };
+
+    const onMouseMoveDrag = (e: MouseEvent) => {
+      if (!isDragging.current || !dragObjectId.current) return;
+      const cam = cameraRef.current;
+      if (!cam) return;
+
+      const rect = canvas.getBoundingClientRect();
+      dragMouse.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      dragMouse.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      dragRaycaster.current.setFromCamera(dragMouse.current, cam);
+      if (dragRaycaster.current.ray.intersectPlane(floorPlaneRef.current, dragPoint.current)) {
+        onMoveObject(dragObjectId.current, dragPoint.current.x, dragPoint.current.z);
+      }
+    };
+
+    const onMouseUp = () => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        dragObjectId.current = null;
+        if (orbitControlsRef.current) orbitControlsRef.current.enabled = true;
+      }
+    };
+
+    canvas.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMoveDrag);
+    window.addEventListener('mouseup', onMouseUp);
+
     const enterWalkMode = () => {
       if (lastWalkPos) {
         camera.position.set(lastWalkPos.x, 1.7, lastWalkPos.z);
@@ -542,6 +625,7 @@ export default function ThreeScene({ sceneData, mode }: Props) {
     let animationId = 0;
 
     function updateFirstPerson(dt: number) {
+      if (isDragging.current) return;
       const wantSprint = keys['ShiftLeft'] || keys['ShiftRight'];
       const baseSpeed = wantSprint ? 7.5 : 3.6; // m/s
       target.set(0, 0, 0);
@@ -609,6 +693,9 @@ export default function ThreeScene({ sceneData, mode }: Props) {
       document.removeEventListener('keyup', onKeyUp);
       document.removeEventListener('mousemove', onMouseMove);
       canvas.removeEventListener('click', onCanvasClick);
+      canvas.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMoveDrag);
+      window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('resize', onResize);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
       scene.traverse((obj) => {
@@ -632,9 +719,82 @@ export default function ThreeScene({ sceneData, mode }: Props) {
       orbitControls.dispose();
       renderer.dispose();
     };
-    // We deliberately exclude `mode` from deps; mode is handled live via modeRef.
+    // We deliberately exclude `mode` and `objects` from deps; mode is handled via modeRef,
+    // objects are seeded here and then managed by the reactive effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneData]);
+
+  /* ---------------- Reactive objects sync ---------------- */
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const currentIds = new Set(objects.map(o => o.id));
+
+    // Remove meshes for deleted objects
+    meshMap.current.forEach((group, id) => {
+      if (!currentIds.has(id)) {
+        scene.remove(group);
+        group.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            (child as THREE.Mesh).geometry.dispose();
+          }
+        });
+        meshMap.current.delete(id);
+      }
+    });
+
+    // Add or update meshes
+    objects.forEach((obj) => {
+      if (meshMap.current.has(obj.id)) {
+        const group = meshMap.current.get(obj.id)!;
+        const prev = group.userData.objSize as { w: number; d: number; h: number } | undefined;
+        if (!prev || prev.w !== obj.width || prev.d !== obj.depth || prev.h !== obj.height) {
+          // Rebuild mesh for size changes
+          scene.remove(group);
+          group.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) (child as THREE.Mesh).geometry.dispose();
+          });
+          const newGroup = buildObjectMesh(obj);
+          newGroup.userData.objectId = obj.id;
+          newGroup.userData.objSize = { w: obj.width, d: obj.depth, h: obj.height };
+          scene.add(newGroup);
+          meshMap.current.set(obj.id, newGroup);
+        } else {
+          // Just update transform (buildObjectMesh sets position from obj.x/y)
+          group.position.set(obj.x, 0, obj.y);
+          group.rotation.y = (obj.rotation * Math.PI) / 180;
+        }
+      } else {
+        // New object
+        const group = buildObjectMesh(obj);
+        group.userData.objectId = obj.id;
+        group.userData.objSize = { w: obj.width, d: obj.depth, h: obj.height };
+        scene.add(group);
+        meshMap.current.set(obj.id, group);
+      }
+    });
+  }, [objects]);
+
+  /* ---------------- Selection highlight ---------------- */
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (selectedHelper.current) {
+      scene.remove(selectedHelper.current);
+      selectedHelper.current = null;
+    }
+
+    if (selectedId) {
+      const group = meshMap.current.get(selectedId);
+      if (group) {
+        const helper = new THREE.BoxHelper(group, 0x00d4ff);
+        scene.add(helper);
+        selectedHelper.current = helper;
+      }
+    }
+  }, [selectedId, objects]);
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
