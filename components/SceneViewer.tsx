@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import ThreeScene from './ThreeScene';
 import { SceneFile } from '@/types/scene';
+import styles from './SceneViewer.module.css';
 
 interface Props {
   sceneData: SceneFile;
@@ -10,71 +11,162 @@ interface Props {
 
 export default function SceneViewer({ sceneData }: Props) {
   const [mode, setMode] = useState<'walk' | 'orbit'>('orbit');
-  const [shareTooltip, setShareTooltip] = useState('Share');
+  const [copied, setCopied] = useState(false);
+  const [pointerLocked, setPointerLocked] = useState(false);
 
   const handleShare = useCallback(async () => {
-    const url = window.location.href;
-    await navigator.clipboard.writeText(url);
-    setShareTooltip('Link copied!');
-    setTimeout(() => setShareTooltip('Share'), 2000);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
+  // Track pointer-lock state to show / hide the "click to enable mouse look" hint
+  useEffect(() => {
+    const onPointerLockChange = () => {
+      setPointerLocked(document.pointerLockElement !== null);
+    };
+    document.addEventListener('pointerlockchange', onPointerLockChange);
+    return () => document.removeEventListener('pointerlockchange', onPointerLockChange);
+  }, []);
+
+  const useCase = sceneData.configuration.useCase || 'Untitled scene';
+  const category = sceneData.configuration.useCaseCategory ?? 'other';
+  const objectCount = sceneData.configuration.objects.length;
+  const width = sceneData.floorplan.width;
+  const depth = sceneData.floorplan.depth;
+  const confidenceRaw = sceneData.floorplan?.confidence;
+  const hasConfidence = typeof confidenceRaw === 'number' && !Number.isNaN(confidenceRaw);
+  const confidencePct = hasConfidence ? Math.round(confidenceRaw * 100) : null;
+
+  let confColor = '';
+  let confGlow = '';
+  if (confidencePct !== null) {
+    if (confidencePct >= 80) {
+      confColor = styles.confHigh;
+      confGlow = styles.glowHigh;
+    } else if (confidencePct >= 60) {
+      confColor = styles.confMid;
+      confGlow = styles.glowMid;
+    } else {
+      confColor = styles.confLow;
+      confGlow = styles.glowLow;
+    }
+  }
+
+  const isWalk = mode === 'walk';
+
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#1a1a2e]">
+    <div className={styles.root}>
       <ThreeScene sceneData={sceneData} mode={mode} />
 
-      {/* Top-left overlay: Scene info */}
-      <div className="absolute left-4 top-4 z-10 max-w-sm rounded-xl bg-black/60 p-4 backdrop-blur-sm">
-        <h2 className="text-lg font-semibold text-white">
-          {sceneData.configuration.useCaseCategory.charAt(0).toUpperCase() +
-            sceneData.configuration.useCaseCategory.slice(1)}{' '}
-          Layout
-        </h2>
-        <p className="mt-1 text-sm text-white/60">{sceneData.configuration.useCase}</p>
-        <p className="mt-2 text-xs text-white/40">
-          {sceneData.configuration.objects.length} objects &middot;{' '}
-          {sceneData.floorplan.width}m &times; {sceneData.floorplan.depth}m
-        </p>
+      {/* ============== Top-left: Scene Info ============== */}
+      <div className={`${styles.panel} ${styles.infoPanel} ${styles.bracket}`}>
+        <span className={styles.infoPulseBorder} aria-hidden />
+        <span className={styles.brBL} />
+        <span className={styles.brBR} />
+
+        <div className={styles.eyebrow}>FLOORPLAN AI</div>
+        <div className={styles.title}>{useCase}</div>
+
+        <hr className={styles.divider} />
+
+        <div className={styles.statRow}>
+          <span className={styles.statLabel}>OBJECTS</span>
+          <span className={styles.statValue}>{objectCount}</span>
+        </div>
+        <div className={styles.statRow}>
+          <span className={styles.statLabel}>AREA</span>
+          <span className={styles.statValue}>
+            {width} &times; {depth} m&sup2;
+          </span>
+        </div>
+        <div className={styles.statRow}>
+          <span className={styles.statLabel}>USE CASE</span>
+          <span className={styles.statValue}>{category.toUpperCase()}</span>
+        </div>
       </div>
 
-      {/* Top-right overlay: Actions */}
-      <div className="absolute right-4 top-4 z-10 flex gap-2">
+      {/* ============== Top-right: Action Buttons ============== */}
+      <div className={styles.actions}>
         <button
-          onClick={() => setMode(mode === 'walk' ? 'orbit' : 'walk')}
-          className="rounded-lg bg-black/60 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-black/80"
+          type="button"
+          onClick={() => setMode(isWalk ? 'orbit' : 'walk')}
+          className={`${styles.btn} ${styles.bracket} ${isWalk ? styles.btnWalkActive : ''}`}
         >
-          {mode === 'walk' ? 'Orbit View' : 'Walk Mode'}
+          <span className={styles.brBL} />
+          <span className={styles.brBR} />
+          <span className={styles.btnIcon}>{isWalk ? '\u2295' : '\u25CE'}</span>
+          <span>{isWalk ? 'WALK MODE' : 'ORBIT MODE'}</span>
         </button>
+
         <button
+          type="button"
           onClick={handleShare}
-          className="rounded-lg bg-accent/80 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-accent"
+          className={`${styles.btn} ${styles.bracket} ${copied ? styles.btnCopied : ''}`}
         >
-          {shareTooltip}
+          <span className={styles.brBL} />
+          <span className={styles.brBR} />
+          <span className={styles.btnIcon}>{copied ? '\u2713' : '\u2398'}</span>
+          <span>{copied ? 'COPIED' : 'SHARE'}</span>
         </button>
+
         <a
           href="/upload"
-          className="rounded-lg bg-black/60 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-black/80"
+          className={`${styles.btn} ${styles.btnNew} ${styles.bracket}`}
         >
-          New Scene
+          <span className={styles.brBL} />
+          <span className={styles.brBR} />
+          <span className={styles.btnIcon}>+</span>
+          <span>NEW SCENE</span>
         </a>
       </div>
 
-      {/* Bottom-center overlay: Controls hint */}
-      <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg bg-black/60 px-6 py-3 text-center backdrop-blur-sm">
-        {mode === 'walk' ? (
-          <p className="text-sm text-white/60">
-            <span className="font-medium text-white">WASD</span> to move &middot;{' '}
-            <span className="font-medium text-white">Mouse</span> to look &middot;{' '}
-            Click to lock cursor
-          </p>
-        ) : (
-          <p className="text-sm text-white/60">
-            <span className="font-medium text-white">Left-click + drag</span> to rotate &middot;{' '}
-            <span className="font-medium text-white">Scroll</span> to zoom &middot;{' '}
-            <span className="font-medium text-white">Right-click + drag</span> to pan
-          </p>
+      {/* ============== Bottom-center: Walk-mode Hints ============== */}
+      <div
+        className={`${styles.hintsWrap} ${isWalk ? styles.hintsVisible : styles.hintsHidden}`}
+      >
+        <div className={`${styles.hintsPill} ${styles.bracket}`}>
+          <span className={styles.brBL} />
+          <span className={styles.brBR} />
+
+          <div className={styles.keyGroup}>
+            <span className={styles.keycap}>W</span>
+            <span className={styles.keycap}>A</span>
+            <span className={styles.keycap}>S</span>
+            <span className={styles.keycap}>D</span>
+            <span className={styles.hintText}>MOVE</span>
+          </div>
+
+          <span className={styles.hintSep} />
+
+          <div className={styles.mouseGroup}>
+            <span className={styles.mouseIcon} aria-hidden />
+            <span className={styles.hintText}>LOOK</span>
+          </div>
+        </div>
+
+        {isWalk && !pointerLocked && (
+          <div className={styles.lockHint}>CLICK SCENE TO ENABLE MOUSE LOOK</div>
         )}
       </div>
+
+      {/* ============== Bottom-right: Confidence ============== */}
+      {hasConfidence && (
+        <div
+          className={`${styles.confidence} ${styles.bracket} ${confGlow}`}
+        >
+          <span className={styles.brBL} />
+          <span className={styles.brBR} />
+          <span className={styles.confidenceLabel}>AI CONFIDENCE</span>
+          <span className={`${styles.confidenceValue} ${confColor}`}>
+            {confidencePct}%
+          </span>
+        </div>
+      )}
     </div>
   );
 }
