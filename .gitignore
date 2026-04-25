@@ -22,6 +22,7 @@
 # misc
 .DS_Store
 *.pem
+nodal-episode-339620-2fa2ccc9d38f.json
 
 # debug
 npm-debug.log*
