@@ -11,11 +11,20 @@ export interface Wall {
 export interface Room {
   id: string;        // unique identifier e.g. "room_1"
   name: string;      // human readable e.g. "Main Hall"
-  x: number;         // top-left x coordinate in meters
-  y: number;         // top-left y coordinate in meters
-  width: number;     // room width in meters
-  height: number;    // room depth in meters
+  x: number;         // top-left x coordinate in meters (bounding box)
+  y: number;         // top-left y coordinate in meters (bounding box)
+  width: number;     // room width in meters (bounding box)
+  height: number;    // room depth in meters (bounding box)
   type: RoomType;    // classification
+  polygon?: Array<{ x: number; y: number }>; // ordered vertices for non-rectangular rooms; absent means use x/y/width/height rectangle
+}
+
+export interface StaircaseLocation {
+  x: number;        // center x coordinate in meters
+  y: number;        // center y coordinate in meters
+  width: number;    // staircase width in meters (perpendicular to travel direction)
+  depth: number;    // staircase depth in meters (along travel direction / run length)
+  rotation: number; // degrees — direction stairs travel (0 = toward +y, 90 = toward +x)
 }
 
 export type RoomType =
@@ -57,7 +66,14 @@ export type ObjectType =
   | "equipment"       // generic industrial equipment block
   | "plant"           // decorative cylinder
   | "divider"         // room divider panel
-  | "entrance_marker"; // arrow pointing to entrance
+  | "entrance_marker" // arrow pointing to entrance
+  | "toilet"          // bathroom toilet fixture
+  | "sink"            // wash-basin / sink fixture
+  | "door"            // hinged door in opening
+  | "staircase"       // multi-step stair flight
+  | "bed"             // bed / sleeping surface
+  | "kitchen_unit"    // kitchen base cabinet w/ sink/stove
+  | "bathtub"         // bathtub / shower
 
 export interface FloorPlan {
   width: number;       // total floor plan width in meters
@@ -67,6 +83,7 @@ export interface FloorPlan {
   scale: number;       // pixels per meter ratio from original image
   confidence: number;  // 0-1, how confident Gemini was in extraction
   notes: string;       // any extraction caveats from Gemini
+  staircases: StaircaseLocation[]; // detected staircase regions (empty array if none found)
 }
 
 export interface Configuration {
@@ -91,4 +108,5 @@ export interface SceneFile {
   createdAt: string;         // ISO timestamp
   floorplan: FloorPlan;
   configuration: Configuration;
+  floorplanImageUrl?: string; // public URL of the original uploaded floor plan image
 }

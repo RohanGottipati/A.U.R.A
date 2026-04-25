@@ -43,6 +43,8 @@ Placement rules you always follow:
 
 Categorize the use case as exactly one of: event, hackathon, office, factory, classroom, retail, other.
 
+You MUST use ONLY these 14 object type strings for the "type" field: table, chair, stage, booth, desk, podium, screen, workstation, shelf, counter, equipment, plant, divider, entrance_marker. Do not invent new types. Map any concept you have in mind to one of those 14: sofa/couch/bench -> chair, TV/monitor/whiteboard -> screen, bookcase/cabinet/locker -> shelf, bar/reception -> counter, partition/curtain -> divider, tree/greenery -> plant, entrance/door/exit -> entrance_marker, printer/server/fridge/HVAC -> equipment.
+
 Place enough objects to make the space look fully configured (15-40 for a large hall, 5-15 for a small room).
 
 You ALWAYS respond with a single raw JSON object - no markdown, no explanation, no code fences.`,

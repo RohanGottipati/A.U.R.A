@@ -24,6 +24,13 @@ const OBJECT_LIBRARY: Record<ObjectType, ObjectTemplate> = {
   plant: { type: "plant", width: 0.8, depth: 0.8, height: 1.2 },
   divider: { type: "divider", width: 3.0, depth: 0.1, height: 1.8 },
   entrance_marker: { type: "entrance_marker", width: 1.0, depth: 1.0, height: 0.2 },
+  toilet: { type: "toilet", width: 0.5, depth: 0.7, height: 0.85 },
+  sink: { type: "sink", width: 0.7, depth: 0.5, height: 0.9 },
+  door: { type: "door", width: 0.9, depth: 0.1, height: 2.1 },
+  staircase: { type: "staircase", width: 1.2, depth: 3.0, height: 1.5 },
+  bed: { type: "bed", width: 1.6, depth: 2.0, height: 0.6 },
+  kitchen_unit: { type: "kitchen_unit", width: 2.4, depth: 0.65, height: 0.9 },
+  bathtub: { type: "bathtub", width: 1.7, depth: 0.75, height: 0.55 },
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -356,6 +363,43 @@ function buildDefaultLayout(room: Room): SceneObject[] {
   return objects;
 }
 
+function buildBathroomLayout(room: Room, startIndex: number): SceneObject[] {
+  const bounds = roomInsetBounds(room);
+  const objects: SceneObject[] = [];
+
+  objects.push(createObject(startIndex + objects.length, room.id, "toilet", bounds.minX + 0.3, bounds.maxY - 0.4, "Toilet"));
+  objects.push(createObject(startIndex + objects.length, room.id, "sink", bounds.maxX - 0.4, bounds.maxY - 0.3, "Sink"));
+  if (room.width > 1.6 && room.height > 1.5) {
+    objects.push(createObject(startIndex + objects.length, room.id, "bathtub", bounds.centerX, bounds.minY + 0.5, "Bathtub"));
+  }
+  return objects;
+}
+
+function buildKitchenLayout(room: Room, startIndex: number): SceneObject[] {
+  const bounds = roomInsetBounds(room);
+  const objects: SceneObject[] = [];
+
+  objects.push(createObject(startIndex + objects.length, room.id, "kitchen_unit", bounds.centerX, bounds.minY + 0.5, "Kitchen Unit"));
+  if (room.width > 4 && room.height > 4) {
+    objects.push(createObject(startIndex + objects.length, room.id, "table", bounds.centerX, bounds.maxY - 1.5, "Dining Table"));
+  }
+  return objects;
+}
+
+function buildSecondaryRooms(floorplan: FloorPlan, primaryRoomId: string, startIndex: number): SceneObject[] {
+  const objects: SceneObject[] = [];
+  for (const room of floorplan.rooms) {
+    if (room.id === primaryRoomId) continue;
+    if (room.width < 1 || room.height < 1) continue;
+    if (room.type === "bathroom") {
+      objects.push(...buildBathroomLayout(room, startIndex + objects.length));
+    } else if (room.type === "kitchen") {
+      objects.push(...buildKitchenLayout(room, startIndex + objects.length));
+    }
+  }
+  return objects;
+}
+
 export function buildFallbackPlacement(
   floorplan: FloorPlan,
   useCase: string,
@@ -363,7 +407,7 @@ export function buildFallbackPlacement(
   const room = findLargestRoom(floorplan);
   const useCaseCategory = inferUseCaseCategory(useCase);
 
-  const objects =
+  const primary =
     useCaseCategory === "hackathon"
       ? buildHackathonLayout(room)
       : useCaseCategory === "event"
@@ -377,6 +421,9 @@ export function buildFallbackPlacement(
               : useCaseCategory === "retail"
                 ? buildRetailLayout(room)
                 : buildDefaultLayout(room);
+
+  const secondary = buildSecondaryRooms(floorplan, room.id, primary.length);
+  const objects = [...primary, ...secondary];
 
   return {
     objects,
@@ -465,5 +512,6 @@ export function buildFallbackFloorPlan(buffer: Buffer, mimeType: string): FloorP
     scale: 10,
     confidence: 0.22,
     notes: "Fallback geometry used because Gemini was unavailable. The layout is approximated as a single primary hall using the uploaded image aspect ratio.",
+    staircases: [],
   };
 }

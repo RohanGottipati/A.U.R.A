@@ -1,203 +1,496 @@
 'use client';
 
 import * as THREE from 'three';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { SceneFile, SceneObject, Wall } from '@/types/scene';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Room, SceneFile, SceneObject, Wall } from '@/types/scene';
+import { buildObjectMesh } from './objectMeshes';
+
+const ROOM_TINT_COLORS: Record<string, number> = {
+  main_hall: 0x1f2937,
+  office:    0x252e3f,
+  corridor:  0x1d1d27,
+  bathroom:  0x213338,
+  storage:   0x2a241c,
+  kitchen:   0x2c241c,
+  entrance:  0x2c2c38,
+  unknown:   0x222230,
+};
 
 interface Props {
   sceneData: SceneFile;
   mode: 'walk' | 'orbit';
 }
 
-const OBJECT_COLORS: Record<string, number> = {
-  table:        0x8B6914,
-  chair:        0x4a7c59,
-  stage:        0x2c5282,
-  booth:        0x7b2d8b,
-  desk:         0x6b8cae,
-  podium:       0xd69e2e,
-  screen:       0x1a1a2a,
-  workstation:  0x4a5568,
-  shelf:        0x744210,
-  counter:      0x975a16,
-  equipment:    0x2d3748,
-  divider:      0xe2e8f0,
-  plant:        0x276749,
-  entrance_marker: 0xe53e3e,
-};
+/* -------------------------------------------------------------------------- */
+/*  Procedural textures                                                       */
+/* -------------------------------------------------------------------------- */
 
-function createFloor(width: number, depth: number): THREE.Mesh {
-  const geometry = new THREE.PlaneGeometry(width, depth);
-  const material = new THREE.MeshLambertMaterial({ color: 0x2d2d2d });
+function makeFloorTexture(): THREE.Texture {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  // Wood plank base
+  const grad = ctx.createLinearGradient(0, 0, 0, size);
+  grad.addColorStop(0, '#3a3245');
+  grad.addColorStop(1, '#2a2434');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Plank seams
+  const plankH = 64;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 1.5;
+  for (let y = 0; y <= size; y += plankH) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+  }
+
+  // Per-plank vertical seam offset (random staggering)
+  for (let y = 0; y < size; y += plankH) {
+    const offset = (y / plankH) % 2 === 0 ? 0 : size / 2;
+    ctx.beginPath();
+    ctx.moveTo(offset, y);
+    ctx.lineTo(offset, y + plankH);
+    ctx.stroke();
+  }
+
+  // Subtle wood grain noise
+  for (let i = 0; i < 5500; i++) {
+    const a = Math.random() * 0.05;
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+  }
+  for (let i = 0; i < 2200; i++) {
+    const a = Math.random() * 0.06;
+    ctx.fillStyle = `rgba(0,0,0,${a})`;
+    ctx.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 16;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeWallTexture(): THREE.Texture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#5b5670';
+  ctx.fillRect(0, 0, size, size);
+
+  // Subtle plaster speckle
+  for (let i = 0; i < 4000; i++) {
+    const a = Math.random() * 0.06;
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+  }
+  for (let i = 0; i < 1500; i++) {
+    const a = Math.random() * 0.08;
+    ctx.fillStyle = `rgba(0,0,0,${a})`;
+    ctx.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Static scene pieces                                                       */
+/* -------------------------------------------------------------------------- */
+
+function createFloor(width: number, depth: number): THREE.Group {
+  const group = new THREE.Group();
+
+  const tex = makeFloorTexture();
+  tex.repeat.set(Math.max(2, width / 2), Math.max(2, depth / 2));
+
+  const geometry = new THREE.PlaneGeometry(width, depth, 1, 1);
+  const material = new THREE.MeshStandardMaterial({
+    map: tex,
+    color: 0xffffff,
+    roughness: 0.55,
+    metalness: 0.05,
+    envMapIntensity: 0.6,
+  });
   const floor = new THREE.Mesh(geometry, material);
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(width / 2, 0, depth / 2);
   floor.receiveShadow = true;
-  return floor;
+  group.add(floor);
+
+  // Trim border with a subtle emissive glow
+  const borderMat = new THREE.MeshStandardMaterial({
+    color: 0x3b82f6,
+    emissive: 0x3b82f6,
+    emissiveIntensity: 0.4,
+    roughness: 0.4,
+    metalness: 0.5,
+  });
+  const trimT = 0.06;
+  const trims = [
+    { w: width, d: trimT, x: width / 2, z: 0 },
+    { w: width, d: trimT, x: width / 2, z: depth },
+    { w: trimT, d: depth, x: 0, z: depth / 2 },
+    { w: trimT, d: depth, x: width, z: depth / 2 },
+  ];
+  for (const t of trims) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.025, t.d), borderMat);
+    m.position.set(t.x, 0.013, t.z);
+    group.add(m);
+  }
+
+  return group;
 }
 
-function createWall(wall: Wall): THREE.Mesh {
+function createRoomFloorOverlays(rooms: Room[]): THREE.Group {
+  // Adds a thin tinted floor patch per room above the global wood floor.
+  // Uses the room polygon when available (irregular / L-shaped rooms) and
+  // otherwise falls back to the bounding rectangle.
+  const group = new THREE.Group();
+  for (const room of rooms) {
+    const color = ROOM_TINT_COLORS[room.type] ?? ROOM_TINT_COLORS.unknown;
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.85,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 0.45,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+
+    let mesh: THREE.Mesh;
+    if (room.polygon && room.polygon.length >= 3) {
+      const shape = new THREE.Shape();
+      shape.moveTo(room.polygon[0].x, room.polygon[0].y);
+      for (let i = 1; i < room.polygon.length; i++) {
+        shape.lineTo(room.polygon[i].x, room.polygon[i].y);
+      }
+      shape.closePath();
+      const geometry = new THREE.ShapeGeometry(shape);
+      mesh = new THREE.Mesh(geometry, material);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = 0.012;
+    } else {
+      const geometry = new THREE.PlaneGeometry(room.width, room.height);
+      mesh = new THREE.Mesh(geometry, material);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(room.x + room.width / 2, 0.012, room.y + room.height / 2);
+    }
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  return group;
+}
+
+function createCeiling(width: number, depth: number, height: number): THREE.Group {
+  const group = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x1a1825,
+    roughness: 0.95,
+    side: THREE.DoubleSide,
+  });
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), material);
+  ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.set(width / 2, height, depth / 2);
+  group.add(ceiling);
+
+  // Recessed ceiling lights (instanced — single draw call, no shadows).
+  const lightMat = new THREE.MeshStandardMaterial({
+    color: 0xfff4e0,
+    emissive: 0xfff4e0,
+    emissiveIntensity: 1.2,
+    roughness: 0.4,
+  });
+  const cellW = 4;
+  const cellD = 4;
+  const cols = Math.max(1, Math.floor(width / cellW));
+  const rows = Math.max(1, Math.floor(depth / cellD));
+  const startX = (width - (cols - 1) * cellW) / 2;
+  const startZ = (depth - (rows - 1) * cellD) / 2;
+  const panelGeo = new THREE.BoxGeometry(0.8, 0.05, 0.8);
+  const inst = new THREE.InstancedMesh(panelGeo, lightMat, cols * rows);
+  inst.castShadow = false;
+  inst.receiveShadow = false;
+  const m = new THREE.Matrix4();
+  let idx = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      m.makeTranslation(startX + c * cellW, height - 0.025, startZ + r * cellD);
+      inst.setMatrixAt(idx++, m);
+    }
+  }
+  inst.instanceMatrix.needsUpdate = true;
+  group.add(inst);
+
+  return group;
+}
+
+function createWallShared(wall: Wall, material: THREE.Material): THREE.Mesh {
   const dx = wall.x2 - wall.x1;
   const dz = wall.y2 - wall.y1;
   const length = Math.sqrt(dx * dx + dz * dz);
   const angle = Math.atan2(dz, dx);
 
-  const geometry = new THREE.BoxGeometry(length, wall.height, 0.2);
-  const material = new THREE.MeshLambertMaterial({ color: 0x4a4a6a });
+  const geometry = new THREE.BoxGeometry(length, wall.height, 0.18);
   const wallMesh = new THREE.Mesh(geometry, material);
 
   wallMesh.position.set(
     (wall.x1 + wall.x2) / 2,
     wall.height / 2,
-    (wall.y1 + wall.y2) / 2
+    (wall.y1 + wall.y2) / 2,
   );
   wallMesh.rotation.y = -angle;
-  wallMesh.castShadow = true;
+  // Walls only receive shadows — they shouldn't cast shadows on each other.
   wallMesh.receiveShadow = true;
   return wallMesh;
 }
 
-function createTextLabel(text: string): CSS2DObject {
-  const div = document.createElement('div');
-  div.textContent = text;
-  div.style.cssText = `
-    background: rgba(0,0,0,0.7);
-    color: white;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-family: Inter, sans-serif;
-    white-space: nowrap;
-    pointer-events: none;
-  `;
-  return new CSS2DObject(div);
+function createObjectMesh(obj: SceneObject): THREE.Group {
+  return buildObjectMesh(obj);
 }
 
-function createObject(obj: SceneObject): THREE.Group {
-  const group = new THREE.Group();
-
-  let geometry: THREE.BufferGeometry;
-  switch (obj.type) {
-    case 'plant':
-      geometry = new THREE.CylinderGeometry(obj.width / 2, obj.width / 2, obj.height, 8);
-      break;
-    case 'podium':
-      geometry = new THREE.CylinderGeometry(obj.width / 3, obj.width / 2, obj.height, 8);
-      break;
-    default:
-      geometry = new THREE.BoxGeometry(obj.width, obj.height, obj.depth);
-  }
-
-  const color = obj.color ? new THREE.Color(obj.color).getHex() : (OBJECT_COLORS[obj.type] ?? 0x718096);
-  const material = new THREE.MeshLambertMaterial({ color });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-
-  mesh.position.set(0, obj.height / 2 + obj.z, 0);
-  group.position.set(obj.x, 0, obj.y);
-  group.rotation.y = (obj.rotation * Math.PI) / 180;
-  group.add(mesh);
-
-  const label = createTextLabel(obj.label);
-  label.position.set(0, obj.height + 0.3, 0);
-  group.add(label);
-
-  return group;
-}
+/* -------------------------------------------------------------------------- */
+/*  Main component                                                            */
+/* -------------------------------------------------------------------------- */
 
 export default function ThreeScene({ sceneData, mode }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Mode is read live from a ref so we don't tear down the scene on toggle.
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
-  const cleanup = useCallback(() => {}, []);
+  // Allow imperative reset of camera placements when mode changes (without
+  // rebuilding the entire scene).
+  const orbitControlsRef = useRef<OrbitControls | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const yawRef = useRef(0);
+  const pitchRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!canvas) return;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    /* ---------------- Renderer ---------------- */
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // Cap DPR at 1.5 — biggest single perf win on retina screens.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = false; // we'll trigger one shadow update on mount
+    renderer.shadowMap.needsUpdate = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    const labelRenderer = new CSS2DRenderer();
-    labelRenderer.setSize(window.innerWidth, window.innerHeight);
-    labelRenderer.domElement.style.position = 'absolute';
-    labelRenderer.domElement.style.top = '0';
-    labelRenderer.domElement.style.pointerEvents = 'none';
-    container.appendChild(labelRenderer.domElement);
-
+    /* ---------------- Scene ---------------- */
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a2e);
-    scene.fog = new THREE.Fog(0x1a1a2e, 20, 80);
+    scene.background = new THREE.Color(0x0c0d18);
+    scene.fog = new THREE.Fog(0x0c0d18, 30, 110);
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
-    camera.position.set(
-      sceneData.floorplan.width / 2,
-      1.7,
-      sceneData.floorplan.depth / 2
+    // PMREM-based image-based lighting from the procedural Room
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    const roomEnv = new RoomEnvironment();
+    const envMap = pmrem.fromScene(roomEnv, 0.04).texture;
+    scene.environment = envMap;
+
+    const fpw = sceneData.floorplan.width;
+    const fpd = sceneData.floorplan.depth;
+
+    /* ---------------- Camera ---------------- */
+    const camera = new THREE.PerspectiveCamera(
+      68,
+      window.innerWidth / window.innerHeight,
+      0.05,
+      400,
     );
-    camera.lookAt(sceneData.floorplan.width / 2, 1.7, 0);
+    cameraRef.current = camera;
+    camera.position.set(fpw / 2, 1.7, fpd / 2);
+    camera.lookAt(fpw / 2, 1.7, 0);
 
-    // Floor
-    scene.add(createFloor(sceneData.floorplan.width, sceneData.floorplan.depth));
+    /* ---------------- Static geometry ---------------- */
+    scene.add(createFloor(fpw, fpd));
+    scene.add(createRoomFloorOverlays(sceneData.floorplan.rooms));
 
-    // Walls
-    sceneData.floorplan.walls.forEach(w => scene.add(createWall(w)));
+    const maxWallHeight = sceneData.floorplan.walls.reduce(
+      (m, w) => Math.max(m, w.height),
+      3,
+    );
+    const ceilingY = maxWallHeight + 0.5;
+    const ceilingGroup = createCeiling(fpw, fpd, ceilingY);
+    scene.add(ceilingGroup);
 
-    // Objects
-    sceneData.configuration.objects.forEach(obj => scene.add(createObject(obj)));
+    // Single shared wall texture (cloning per-wall causes one upload per wall).
+    const wallTex = makeWallTexture();
+    wallTex.repeat.set(2, 1.5);
+    const sharedWallMaterial = new THREE.MeshStandardMaterial({
+      map: wallTex,
+      color: 0xffffff,
+      roughness: 0.85,
+      metalness: 0.05,
+    });
+    const wallsGroup = new THREE.Group();
+    sceneData.floorplan.walls.forEach((w) =>
+      wallsGroup.add(createWallShared(w, sharedWallMaterial)),
+    );
+    scene.add(wallsGroup);
 
-    // Lighting
-    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambient);
+    sceneData.configuration.objects.forEach((obj) => scene.add(createObjectMesh(obj)));
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(10, 20, 10);
+    /* ---------------- Lighting (kept lean for perf) ---------------- */
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+    const hemi = new THREE.HemisphereLight(0xc6d4ff, 0x1a1820, 0.7);
+    hemi.position.set(fpw / 2, ceilingY, fpd / 2);
+    scene.add(hemi);
+
+    const dirLight = new THREE.DirectionalLight(0xfff1d6, 0.95);
+    dirLight.position.set(fpw * 0.65, Math.max(fpw, fpd) * 1.1, fpd * 0.35);
     dirLight.castShadow = true;
-    dirLight.shadow.camera.near = 0.1;
-    dirLight.shadow.camera.far = 100;
-    dirLight.shadow.camera.left = -50;
-    dirLight.shadow.camera.right = 50;
-    dirLight.shadow.camera.top = 50;
-    dirLight.shadow.camera.bottom = -50;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    const shadowExtent = Math.max(fpw, fpd);
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = shadowExtent * 3;
+    dirLight.shadow.camera.left = -shadowExtent;
+    dirLight.shadow.camera.right = shadowExtent;
+    dirLight.shadow.camera.top = shadowExtent;
+    dirLight.shadow.camera.bottom = -shadowExtent;
+    dirLight.shadow.bias = -0.0004;
     scene.add(dirLight);
 
-    const pointLight1 = new THREE.PointLight(0x4fc3f7, 0.5, 30);
-    pointLight1.position.set(5, 4, 5);
-    scene.add(pointLight1);
+    // Two soft accent lights only (no shadows). The ceiling-panel grid of point
+    // lights was removed because it spiked GPU cost without much visual gain
+    // alongside IBL + directional + ambient.
+    const accentA = new THREE.PointLight(0x60a5fa, 0.6, Math.max(fpw, fpd) * 0.9);
+    accentA.position.set(fpw * 0.15, ceilingY * 0.9, fpd * 0.15);
+    scene.add(accentA);
+    const accentB = new THREE.PointLight(0xf472b6, 0.5, Math.max(fpw, fpd) * 0.9);
+    accentB.position.set(fpw * 0.85, ceilingY * 0.9, fpd * 0.85);
+    scene.add(accentB);
 
-    // Orbit Controls
+    /* ---------------- Orbit controls ---------------- */
     const orbitControls = new OrbitControls(camera, renderer.domElement);
-    orbitControls.target.set(sceneData.floorplan.width / 2, 0, sceneData.floorplan.depth / 2);
-    orbitControls.maxPolarAngle = Math.PI / 2.1;
+    orbitControlsRef.current = orbitControls;
+    orbitControls.target.set(fpw / 2, 0, fpd / 2);
+    // Allow looking nearly straight down for a true top-down overview, while
+    // still preventing flipping past the horizon.
+    orbitControls.maxPolarAngle = Math.PI * 0.495;
+    orbitControls.minPolarAngle = 0.05;
+    orbitControls.minDistance = 2;
+    orbitControls.maxDistance = Math.max(fpw, fpd) * 4;
     orbitControls.enableDamping = true;
-    orbitControls.dampingFactor = 0.05;
+    orbitControls.dampingFactor = 0.08;
+    orbitControls.zoomSpeed = 0.9;
+    orbitControls.rotateSpeed = 0.85;
+    orbitControls.panSpeed = 0.8;
+    orbitControls.screenSpacePanning = true;
 
-    // WASD first-person controls
+    const setOrbitOverview = () => {
+      // Frame the entire floor-plan footprint in the viewport, regardless of
+      // its aspect ratio. The camera is positioned high and pulled back along
+      // a fixed isometric-ish direction so the user sees the whole space.
+      const fovRad = (camera.fov * Math.PI) / 180;
+      const aspect = camera.aspect;
+      // Distance needed to fit the largest dimension of the floor.
+      const halfW = fpw / 2;
+      const halfD = fpd / 2;
+      const halfMaxFromVertical = Math.max(halfD, halfW / aspect);
+      // Add 25% padding so the floor isn't flush against the viewport edges.
+      const distance = (halfMaxFromVertical / Math.tan(fovRad / 2)) * 1.25;
+
+      // Look from a 45-degree-ish elevation angle so we can see object heights
+      // while still capturing the full floor.
+      const elevation = Math.PI * 0.32; // ~58 degrees from horizontal
+      const azimuth = Math.PI * 0.25;   // 45 degrees around the room
+
+      const cx = fpw / 2;
+      const cz = fpd / 2;
+      camera.position.set(
+        cx + Math.cos(azimuth) * distance * Math.cos(elevation),
+        Math.sin(elevation) * distance,
+        cz + Math.sin(azimuth) * distance * Math.cos(elevation),
+      );
+      orbitControls.target.set(cx, 0, cz);
+      orbitControls.update();
+    };
+
+    const applyModeVisibility = (m: 'walk' | 'orbit') => {
+      // The ceiling (and its emissive light panels) would otherwise sit
+      // between the orbit camera and the room when looking from above. Hide
+      // it entirely in orbit mode so the user sees the floor plan clearly.
+      ceilingGroup.visible = m === 'walk';
+      // Make walls cull from the back side (their inside face) so they don't
+      // block the orbit view of the rooms inside.
+      wallsGroup.traverse((c) => {
+        if (c instanceof THREE.Mesh) {
+          const wallMat = c.material as THREE.MeshStandardMaterial;
+          wallMat.side = m === 'walk' ? THREE.DoubleSide : THREE.BackSide;
+          wallMat.needsUpdate = true;
+        }
+      });
+    };
+
+    if (mode === 'orbit') {
+      setOrbitOverview();
+      orbitControls.enabled = true;
+      applyModeVisibility('orbit');
+    } else {
+      orbitControls.enabled = false;
+      applyModeVisibility('walk');
+    }
+
+    /* ---------------- Walk (first-person) controls ---------------- */
     const keys: Record<string, boolean> = {};
-    let yaw = 0;
-    let pitch = 0;
+    yawRef.current = 0;
+    pitchRef.current = 0;
 
-    const onKeyDown = (e: KeyboardEvent) => { keys[e.code] = true; };
+    // Velocity & damping for smooth movement
+    const velocity = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    let lastWalkPos: { x: number; z: number; yaw: number; pitch: number } | null = null;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      keys[e.code] = true;
+      if (modeRef.current === 'walk') e.preventDefault();
+    };
     const onKeyUp = (e: KeyboardEvent) => { keys[e.code] = false; };
+
     const onMouseMove = (e: MouseEvent) => {
-      if (document.pointerLockElement === canvas) {
-        yaw -= e.movementX * 0.002;
-        pitch -= e.movementY * 0.002;
-        pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
+      if (document.pointerLockElement === canvas && modeRef.current === 'walk') {
+        yawRef.current -= e.movementX * 0.0022;
+        pitchRef.current -= e.movementY * 0.0022;
+        pitchRef.current = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, pitchRef.current));
       }
     };
-    const onClick = () => {
-      if (modeRef.current === 'walk') {
+
+    const onCanvasClick = () => {
+      if (modeRef.current === 'walk' && document.pointerLockElement !== canvas) {
         canvas.requestPointerLock();
       }
     };
@@ -205,67 +498,143 @@ export default function ThreeScene({ sceneData, mode }: Props) {
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     document.addEventListener('mousemove', onMouseMove);
-    canvas.addEventListener('click', onClick);
+    canvas.addEventListener('click', onCanvasClick);
 
-    function updateFirstPerson() {
-      const speed = 0.08;
-      const direction = new THREE.Vector3();
+    const enterWalkMode = () => {
+      if (lastWalkPos) {
+        camera.position.set(lastWalkPos.x, 1.7, lastWalkPos.z);
+        yawRef.current = lastWalkPos.yaw;
+        pitchRef.current = lastWalkPos.pitch;
+      } else {
+        camera.position.set(fpw / 2, 1.7, fpd / 2);
+        yawRef.current = 0;
+        pitchRef.current = 0;
+      }
+      camera.rotation.order = 'YXZ';
+      camera.rotation.set(pitchRef.current, yawRef.current, 0);
+      velocity.set(0, 0, 0);
+      orbitControls.enabled = false;
+      applyModeVisibility('walk');
+      renderer.shadowMap.needsUpdate = true;
+    };
 
-      if (keys['KeyW'] || keys['ArrowUp'])    direction.z -= 1;
-      if (keys['KeyS'] || keys['ArrowDown'])  direction.z += 1;
-      if (keys['KeyA'] || keys['ArrowLeft'])  direction.x -= 1;
-      if (keys['KeyD'] || keys['ArrowRight']) direction.x += 1;
+    const enterOrbitMode = () => {
+      // Save walk pose so re-entering walk feels continuous
+      lastWalkPos = {
+        x: camera.position.x,
+        z: camera.position.z,
+        yaw: yawRef.current,
+        pitch: pitchRef.current,
+      };
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
+      setOrbitOverview();
+      orbitControls.enabled = true;
+      applyModeVisibility('orbit');
+      renderer.shadowMap.needsUpdate = true;
+    };
 
-      direction.normalize().multiplyScalar(speed);
-      direction.applyEuler(new THREE.Euler(0, yaw, 0));
+    // Shadow map only needs to render once because nothing in the scene moves.
+    renderer.shadowMap.needsUpdate = true;
 
-      camera.position.add(direction);
+    /* ---------------- Animate ---------------- */
+    const clock = new THREE.Clock();
+    let prevMode = mode;
+    let animationId = 0;
+
+    function updateFirstPerson(dt: number) {
+      const wantSprint = keys['ShiftLeft'] || keys['ShiftRight'];
+      const baseSpeed = wantSprint ? 7.5 : 3.6; // m/s
+      target.set(0, 0, 0);
+      if (keys['KeyW'] || keys['ArrowUp'])    target.z -= 1;
+      if (keys['KeyS'] || keys['ArrowDown'])  target.z += 1;
+      if (keys['KeyA'] || keys['ArrowLeft'])  target.x -= 1;
+      if (keys['KeyD'] || keys['ArrowRight']) target.x += 1;
+      if (target.lengthSq() > 0) target.normalize();
+      target.multiplyScalar(baseSpeed);
+      target.applyEuler(new THREE.Euler(0, yawRef.current, 0));
+
+      // Critically-damped lerp toward target velocity (frame-rate independent)
+      const accelTime = 0.12; // seconds to reach ~63% of target
+      const t = 1 - Math.exp(-dt / accelTime);
+      velocity.x += (target.x - velocity.x) * t;
+      velocity.z += (target.z - velocity.z) * t;
+
+      camera.position.x += velocity.x * dt;
+      camera.position.z += velocity.z * dt;
       camera.position.y = 1.7;
 
+      const pad = 0.45;
+      camera.position.x = Math.max(pad, Math.min(fpw - pad, camera.position.x));
+      camera.position.z = Math.max(pad, Math.min(fpd - pad, camera.position.z));
+
       camera.rotation.order = 'YXZ';
-      camera.rotation.y = yaw;
-      camera.rotation.x = pitch;
+      camera.rotation.y = yawRef.current;
+      camera.rotation.x = pitchRef.current;
+      camera.rotation.z = 0;
     }
 
-    // Resize handler
+    function animate() {
+      animationId = requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const m = modeRef.current;
+
+      if (m !== prevMode) {
+        if (m === 'walk') enterWalkMode();
+        else enterOrbitMode();
+        prevMode = m;
+      }
+
+      if (m === 'walk') {
+        updateFirstPerson(dt);
+      } else {
+        orbitControls.update();
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    /* ---------------- Resize ---------------- */
     const onResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-      labelRenderer.setSize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
 
-    // Animation loop
-    let animationId: number;
-    function animate() {
-      animationId = requestAnimationFrame(animate);
-      if (modeRef.current === 'walk') {
-        orbitControls.enabled = false;
-        updateFirstPerson();
-      } else {
-        orbitControls.enabled = true;
-        orbitControls.update();
-      }
-      renderer.render(scene, camera);
-      labelRenderer.render(scene, camera);
-    }
-    animate();
-
+    /* ---------------- Cleanup ---------------- */
     return () => {
       cancelAnimationFrame(animationId);
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('keyup', onKeyUp);
       document.removeEventListener('mousemove', onMouseMove);
-      canvas.removeEventListener('click', onClick);
+      canvas.removeEventListener('click', onCanvasClick);
       window.removeEventListener('resize', onResize);
-      if (container.contains(labelRenderer.domElement)) {
-        container.removeChild(labelRenderer.domElement);
-      }
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
+      scene.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          const mat = obj.material;
+          if (Array.isArray(mat)) {
+            mat.forEach((mm) => {
+              const anyMat = mm as THREE.MeshStandardMaterial;
+              if (anyMat.map) anyMat.map.dispose();
+              mm.dispose();
+            });
+          } else {
+            const anyMat = mat as THREE.MeshStandardMaterial;
+            if (anyMat.map) anyMat.map.dispose();
+            mat.dispose();
+          }
+        }
+      });
+      pmrem.dispose();
+      orbitControls.dispose();
       renderer.dispose();
-      cleanup();
     };
-  }, [sceneData, cleanup]);
+    // We deliberately exclude `mode` from deps; mode is handled live via modeRef.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneData]);
 
   return (
     <div ref={containerRef} className="relative w-full h-full">

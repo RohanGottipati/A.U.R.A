@@ -4,6 +4,7 @@ import {
   RoomType,
   SceneFile,
   SceneObject,
+  StaircaseLocation,
   UseCaseCategory,
   ObjectType,
   Wall,
@@ -35,7 +36,209 @@ const OBJECT_TYPES = [
   "plant",
   "divider",
   "entrance_marker",
+  "toilet",
+  "sink",
+  "door",
+  "staircase",
+  "bed",
+  "kitchen_unit",
+  "bathtub",
 ] as const satisfies readonly ObjectType[];
+
+// Common LLM variants -> valid ObjectType. Keys are lowercased + underscored.
+const OBJECT_TYPE_SYNONYMS: Record<string, ObjectType> = {
+  // seating
+  sofa: "chair",
+  couch: "chair",
+  loveseat: "chair",
+  bench: "chair",
+  stool: "chair",
+  armchair: "chair",
+  recliner: "chair",
+  beanbag: "chair",
+  bean_bag: "chair",
+  ottoman: "chair",
+
+  // tables
+  round_table: "table",
+  coffee_table: "table",
+  dining_table: "table",
+  conference_table: "table",
+  side_table: "table",
+  end_table: "table",
+  picnic_table: "table",
+
+  // desks / workstations
+  cubicle: "desk",
+  office_desk: "desk",
+  computer_desk: "desk",
+  standing_desk: "desk",
+  workbench: "workstation",
+  assembly_line: "workstation",
+  machine: "workstation",
+
+  // screens / displays
+  tv: "screen",
+  television: "screen",
+  monitor: "screen",
+  display: "screen",
+  projector_screen: "screen",
+  projector: "screen",
+  whiteboard: "screen",
+  chalkboard: "screen",
+  smartboard: "screen",
+  led_wall: "screen",
+  videowall: "screen",
+  video_wall: "screen",
+
+  // stages / podium
+  platform: "stage",
+  dais: "stage",
+  riser: "stage",
+  lectern: "podium",
+  pulpit: "podium",
+  speaker_podium: "podium",
+
+  // booths
+  kiosk: "booth",
+  vendor_booth: "booth",
+  exhibit_booth: "booth",
+  trade_booth: "booth",
+  trade_show_booth: "booth",
+
+  // shelves / storage
+  bookshelf: "shelf",
+  bookcase: "shelf",
+  cabinet: "shelf",
+  storage: "shelf",
+  storage_rack: "shelf",
+  rack: "shelf",
+  locker: "shelf",
+  filing_cabinet: "shelf",
+
+  // counters / bar
+  bar: "counter",
+  bar_counter: "counter",
+  reception: "counter",
+  reception_desk: "counter",
+  checkout: "counter",
+  cash_register: "counter",
+  service_counter: "counter",
+
+  // equipment / industrial
+  printer: "equipment",
+  copier: "equipment",
+  vending_machine: "equipment",
+  fridge: "equipment",
+  refrigerator: "equipment",
+  oven: "equipment",
+  washing_machine: "equipment",
+  generator: "equipment",
+  server: "equipment",
+  server_rack: "equipment",
+  hvac: "equipment",
+  ac: "equipment",
+  fan: "equipment",
+  light: "equipment",
+  lamp: "equipment",
+  speaker: "equipment",
+  pa_system: "equipment",
+  speakers: "equipment",
+
+  // dividers / walls
+  partition: "divider",
+  cubicle_wall: "divider",
+  screen_divider: "divider",
+  curtain: "divider",
+  panel: "divider",
+
+  // plants
+  tree: "plant",
+  flower: "plant",
+  potted_plant: "plant",
+  shrub: "plant",
+  bush: "plant",
+  greenery: "plant",
+
+  // entrances
+  entrance: "entrance_marker",
+  exit: "entrance_marker",
+  exit_marker: "entrance_marker",
+  doorway: "entrance_marker",
+  entry: "entrance_marker",
+  arrow: "entrance_marker",
+
+  // doors (passable, hinged)
+  door: "door",
+  hinged_door: "door",
+  swing_door: "door",
+  interior_door: "door",
+  exterior_door: "door",
+
+  // bathroom fixtures
+  toilet: "toilet",
+  wc: "toilet",
+  water_closet: "toilet",
+  urinal: "toilet",
+  commode: "toilet",
+  sink: "sink",
+  basin: "sink",
+  washbasin: "sink",
+  wash_basin: "sink",
+  vanity: "sink",
+  bathroom_sink: "sink",
+  bathtub: "bathtub",
+  tub: "bathtub",
+  shower: "bathtub",
+  shower_stall: "bathtub",
+
+  // bedroom
+  bed: "bed",
+  king_bed: "bed",
+  queen_bed: "bed",
+  twin_bed: "bed",
+  mattress: "bed",
+  bunk_bed: "bed",
+  crib: "bed",
+
+  // kitchen
+  kitchen: "kitchen_unit",
+  kitchen_unit: "kitchen_unit",
+  kitchen_island: "kitchen_unit",
+  kitchen_counter: "kitchen_unit",
+  stove: "kitchen_unit",
+  oven_stove: "kitchen_unit",
+  cooktop: "kitchen_unit",
+  range: "kitchen_unit",
+  kitchen_sink: "kitchen_unit",
+
+  // staircases
+  staircase: "staircase",
+  stairs: "staircase",
+  stairway: "staircase",
+  steps: "staircase",
+  stair: "staircase",
+  flight: "staircase",
+  flight_of_stairs: "staircase",
+};
+
+function coerceObjectType(raw: unknown): ObjectType | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if ((OBJECT_TYPES as readonly string[]).includes(trimmed)) return trimmed as ObjectType;
+  const normalized = trimmed.toLowerCase().replace(/[\s\-/]+/g, "_");
+  if ((OBJECT_TYPES as readonly string[]).includes(normalized)) return normalized as ObjectType;
+  if (OBJECT_TYPE_SYNONYMS[normalized]) return OBJECT_TYPE_SYNONYMS[normalized];
+  // Substring fallback for things like "lounge_sofa" or "office_chair"
+  for (const [key, val] of Object.entries(OBJECT_TYPE_SYNONYMS)) {
+    if (normalized.includes(key)) return val;
+  }
+  for (const t of OBJECT_TYPES as readonly string[]) {
+    if (normalized.includes(t)) return t as ObjectType;
+  }
+  return null;
+}
 
 const USE_CASE_CATEGORIES = [
   "event",
@@ -185,6 +388,20 @@ function buildBoundingWalls(width: number, depth: number, height = 3): Wall[] {
 
 function normalizeRoom(value: unknown, index: number): Room {
   const room = expectRecord(value, `floorplan.rooms[${index}]`);
+  const polygon = Array.isArray(room.polygon)
+    ? (room.polygon as unknown[])
+        .filter(
+          (pt) =>
+            isRecord(pt) &&
+            typeof (pt as Record<string, unknown>).x === "number" &&
+            typeof (pt as Record<string, unknown>).y === "number",
+        )
+        .map((pt) => ({
+          x: (pt as Record<string, unknown>).x as number,
+          y: (pt as Record<string, unknown>).y as number,
+        }))
+    : undefined;
+
   return {
     id: readString(room.id, `floorplan.rooms[${index}].id`, { defaultValue: `room_${index + 1}` }),
     name: readString(room.name, `floorplan.rooms[${index}].name`, { defaultValue: `Room ${index + 1}` }),
@@ -193,6 +410,7 @@ function normalizeRoom(value: unknown, index: number): Room {
     width: readPositiveNumber(room.width, `floorplan.rooms[${index}].width`),
     height: readPositiveNumber(room.height, `floorplan.rooms[${index}].height`),
     type: readEnumValue(room.type, `floorplan.rooms[${index}].type`, ROOM_TYPES, { defaultValue: "unknown" }),
+    ...(polygon && polygon.length >= 3 ? { polygon } : {}),
   };
 }
 
@@ -239,6 +457,18 @@ export function normalizeFloorPlan(input: unknown): FloorPlan {
           })(),
     confidence: clampConfidence(floorplan.confidence),
     notes: readString(floorplan.notes, "floorplan.notes", { allowEmpty: true, defaultValue: "" }),
+    staircases: Array.isArray(floorplan.staircases)
+      ? (floorplan.staircases as unknown[])
+          .filter(
+            (s): s is StaircaseLocation =>
+              isRecord(s) &&
+              typeof (s as Record<string, unknown>).x === "number" &&
+              typeof (s as Record<string, unknown>).y === "number" &&
+              typeof (s as Record<string, unknown>).width === "number" &&
+              typeof (s as Record<string, unknown>).depth === "number" &&
+              typeof (s as Record<string, unknown>).rotation === "number",
+          )
+      : [],
   };
 }
 
@@ -249,15 +479,24 @@ function normalizeSceneObject(
   fieldPrefix: string,
 ): SceneObject {
   const object = expectRecord(value, `${fieldPrefix}[${index}]`);
-  const roomId = readString(object.roomId, `${fieldPrefix}[${index}].roomId`);
+  // Be lenient about roomId: if Gemini returns an unknown id (e.g. "global"
+  // or a hallucinated key), fall back to the first known room rather than
+  // discarding the otherwise-valid object placement.
+  const roomIdRaw = readString(object.roomId, `${fieldPrefix}[${index}].roomId`, {
+    defaultValue: "",
+  });
+  const roomId = roomIds.has(roomIdRaw) ? roomIdRaw : Array.from(roomIds)[0];
 
-  if (!roomIds.has(roomId)) {
-    throw new Error(`${fieldPrefix}[${index}].roomId references unknown room "${roomId}"`);
+  const coercedType = coerceObjectType(object.type);
+  if (!coercedType) {
+    throw new Error(
+      `${fieldPrefix}[${index}].type must be one of: ${OBJECT_TYPES.join(", ")} (got: ${String(object.type)})`,
+    );
   }
 
   return {
     id: readString(object.id, `${fieldPrefix}[${index}].id`, { defaultValue: `obj_${index + 1}` }),
-    type: readEnumValue(object.type, `${fieldPrefix}[${index}].type`, OBJECT_TYPES),
+    type: coercedType,
     roomId,
     x: readFiniteNumber(object.x, `${fieldPrefix}[${index}].x`),
     y: readFiniteNumber(object.y, `${fieldPrefix}[${index}].y`),
@@ -266,7 +505,9 @@ function normalizeSceneObject(
     depth: readPositiveNumber(object.depth, `${fieldPrefix}[${index}].depth`),
     height: readPositiveNumber(object.height, `${fieldPrefix}[${index}].height`),
     rotation: readFiniteNumber(object.rotation ?? 0, `${fieldPrefix}[${index}].rotation`),
-    label: readString(object.label, `${fieldPrefix}[${index}].label`),
+    label: readString(object.label, `${fieldPrefix}[${index}].label`, {
+      defaultValue: coercedType.replace(/_/g, " "),
+    }),
     color: readOptionalString(object.color),
   };
 }
@@ -280,7 +521,23 @@ function normalizeSceneObjects(
     throw new Error(`${field} must contain at least one object`);
   }
 
-  return value.map((object, index) => normalizeSceneObject(object, index, roomIds, field));
+  const out: SceneObject[] = [];
+  value.forEach((object, index) => {
+    try {
+      out.push(normalizeSceneObject(object, index, roomIds, field));
+    } catch (err) {
+      // Skip individual malformed objects rather than failing the entire pipeline.
+      console.warn(
+        `[scene-validation] Skipping ${field}[${index}]: ${(err as Error).message}`,
+      );
+    }
+  });
+
+  if (out.length === 0) {
+    throw new Error(`${field} contains no valid objects after normalization`);
+  }
+
+  return out;
 }
 
 export function normalizeAgent2Output(
@@ -339,5 +596,8 @@ export function normalizeSceneFile(input: unknown): SceneFile {
         { allowEmpty: true, defaultValue: "" },
       ),
     },
+    ...(readOptionalString(payload.floorplanImageUrl)
+      ? { floorplanImageUrl: readOptionalString(payload.floorplanImageUrl) }
+      : {}),
   };
 }
