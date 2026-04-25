@@ -7,6 +7,10 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { Room, SceneFile, SceneObject, Wall } from '@/types/scene';
 import { buildObjectMesh } from './objectMeshes';
 
+// The right-side sidebar reserves 280px of horizontal space; the canvas must
+// not be drawn underneath it.
+const SIDEBAR_WIDTH = 280;
+
 const ROOM_TINT_COLORS: Record<string, number> = {
   main_hall: 0x1f2937,
   office:    0x252e3f,
@@ -25,6 +29,13 @@ interface Props {
   selectedId: string | null;
   onSelectObject: (id: string | null) => void;
   onMoveObject: (id: string, x: number, y: number) => void;
+  // Mutable ref written to on every frame so the parent can spawn new
+  // objects under the user's current focus instead of the floor centre.
+  cameraTargetRef?: React.MutableRefObject<{ x: number; z: number } | null>;
+  // "Click on the floor to choose your walk-mode starting point" flow.
+  placingWalkSpawn?: boolean;
+  walkSpawn?: { x: number; z: number } | null;
+  onWalkSpawnSelected?: (x: number, z: number) => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -268,15 +279,22 @@ function createWallShared(wall: Wall, material: THREE.Material): THREE.Mesh {
   return wallMesh;
 }
 
-function createObjectMesh(obj: SceneObject): THREE.Group {
-  return buildObjectMesh(obj);
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Main component                                                            */
 /* -------------------------------------------------------------------------- */
 
-export default function ThreeScene({ sceneData, mode, objects, selectedId, onSelectObject, onMoveObject }: Props) {
+export default function ThreeScene({
+  sceneData,
+  mode,
+  objects,
+  selectedId,
+  onSelectObject,
+  onMoveObject,
+  cameraTargetRef,
+  placingWalkSpawn = false,
+  walkSpawn = null,
+  onWalkSpawnSelected,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -301,6 +319,18 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
   const dragRaycaster = useRef(new THREE.Raycaster());
   const dragMouse = useRef(new THREE.Vector2());
 
+  // Live mirrors for the walk-spawn placement flow so the build-once setup
+  // effect can read the latest values without re-mounting.
+  const placingWalkSpawnRef = useRef(placingWalkSpawn);
+  placingWalkSpawnRef.current = placingWalkSpawn;
+  const onWalkSpawnSelectedRef = useRef(onWalkSpawnSelected);
+  onWalkSpawnSelectedRef.current = onWalkSpawnSelected;
+  // Persist the last position the user was at when leaving walk mode so we
+  // can return them there next time.
+  const lastWalkPosRef = useRef<
+    { x: number; z: number; yaw: number; pitch: number } | null
+  >(null);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -311,7 +341,8 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
       antialias: true,
       powerPreference: 'high-performance',
     });
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    const canvasWidth = () => Math.max(1, window.innerWidth - SIDEBAR_WIDTH);
+    renderer.setSize(canvasWidth(), window.innerHeight);
     // Cap DPR at 1.5 — biggest single perf win on retina screens.
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
@@ -341,7 +372,7 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
     /* ---------------- Camera ---------------- */
     const camera = new THREE.PerspectiveCamera(
       68,
-      window.innerWidth / window.innerHeight,
+      canvasWidth() / window.innerHeight,
       0.05,
       400,
     );
@@ -495,7 +526,6 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
     // Velocity & damping for smooth movement
     const velocity = new THREE.Vector3();
     const target = new THREE.Vector3();
-    let lastWalkPos: { x: number; z: number; yaw: number; pitch: number } | null = null;
 
     const onKeyDown = (e: KeyboardEvent) => {
       keys[e.code] = true;
@@ -526,6 +556,41 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
     const clickRaycaster = new THREE.Raycaster();
     const clickMouse = new THREE.Vector2();
 
+    /* ---------------- Walk-spawn placement marker ----------------- */
+    const placementMarker = new THREE.Group();
+    placementMarker.visible = false;
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00d4ff,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ringMesh = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 64), ringMat);
+    ringMesh.rotation.x = -Math.PI / 2;
+    ringMesh.position.y = 0.03;
+    placementMarker.add(ringMesh);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0x00d4ff,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const innerDisc = new THREE.Mesh(new THREE.CircleGeometry(0.42, 48), innerMat);
+    innerDisc.rotation.x = -Math.PI / 2;
+    innerDisc.position.y = 0.025;
+    placementMarker.add(innerDisc);
+    scene.add(placementMarker);
+
+    const clampToFloor = (px: number, pz: number) => {
+      const pad = 0.5;
+      return {
+        x: Math.max(pad, Math.min(fpw - pad, px)),
+        z: Math.max(pad, Math.min(fpd - pad, pz)),
+      };
+    };
+
     const onMouseDown = (e: MouseEvent) => {
       if (modeRef.current === 'walk') return;
       const rect = canvas.getBoundingClientRect();
@@ -535,6 +600,16 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
       const cam = cameraRef.current;
       if (!cam) return;
       clickRaycaster.setFromCamera(clickMouse, cam);
+
+      // Walk-spawn placement: ignore objects, snap to floor and fire callback.
+      if (placingWalkSpawnRef.current) {
+        const hit = new THREE.Vector3();
+        if (clickRaycaster.ray.intersectPlane(floorPlaneRef.current, hit)) {
+          const { x, z } = clampToFloor(hit.x, hit.z);
+          onWalkSpawnSelectedRef.current?.(x, z);
+        }
+        return;
+      }
 
       const allGroups = Array.from(meshMap.current.values());
       const intersects = clickRaycaster.intersectObjects(allGroups, true);
@@ -557,6 +632,29 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
     };
 
     const onMouseMoveDrag = (e: MouseEvent) => {
+      // Update the placement marker as the cursor moves over the floor.
+      if (placingWalkSpawnRef.current && modeRef.current !== 'walk') {
+        const cam = cameraRef.current;
+        if (cam) {
+          const rect = canvas.getBoundingClientRect();
+          dragMouse.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          dragMouse.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          dragRaycaster.current.setFromCamera(dragMouse.current, cam);
+          const hit = new THREE.Vector3();
+          if (
+            dragRaycaster.current.ray.intersectPlane(floorPlaneRef.current, hit)
+          ) {
+            const { x, z } = clampToFloor(hit.x, hit.z);
+            placementMarker.position.set(x, 0, z);
+            placementMarker.visible = true;
+          } else {
+            placementMarker.visible = false;
+          }
+        }
+      } else if (placementMarker.visible) {
+        placementMarker.visible = false;
+      }
+
       if (!isDragging.current || !dragObjectId.current) return;
       const cam = cameraRef.current;
       if (!cam) return;
@@ -584,10 +682,11 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
     window.addEventListener('mouseup', onMouseUp);
 
     const enterWalkMode = () => {
-      if (lastWalkPos) {
-        camera.position.set(lastWalkPos.x, 1.7, lastWalkPos.z);
-        yawRef.current = lastWalkPos.yaw;
-        pitchRef.current = lastWalkPos.pitch;
+      const pos = lastWalkPosRef.current;
+      if (pos) {
+        camera.position.set(pos.x, 1.7, pos.z);
+        yawRef.current = pos.yaw;
+        pitchRef.current = pos.pitch;
       } else {
         camera.position.set(fpw / 2, 1.7, fpd / 2);
         yawRef.current = 0;
@@ -603,7 +702,7 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
 
     const enterOrbitMode = () => {
       // Save walk pose so re-entering walk feels continuous
-      lastWalkPos = {
+      lastWalkPosRef.current = {
         x: camera.position.x,
         z: camera.position.z,
         yaw: yawRef.current,
@@ -674,15 +773,23 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
         orbitControls.update();
       }
 
+      if (cameraTargetRef) {
+        cameraTargetRef.current = {
+          x: orbitControls.target.x,
+          z: orbitControls.target.z,
+        };
+      }
+
       renderer.render(scene, camera);
     }
     animate();
 
     /* ---------------- Resize ---------------- */
     const onResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      const w = canvasWidth();
+      camera.aspect = w / window.innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(w, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
 
@@ -723,6 +830,31 @@ export default function ThreeScene({ sceneData, mode, objects, selectedId, onSel
     // objects are seeded here and then managed by the reactive effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneData]);
+
+  /* ---------------- Walk-spawn -> last walk position ---------------- */
+  // When the user picks a spawn point in orbit, immediately overwrite the
+  // remembered walk-mode position so enterWalkMode() teleports them there
+  // on the next mode flip.
+  useEffect(() => {
+    if (walkSpawn) {
+      lastWalkPosRef.current = {
+        x: walkSpawn.x,
+        z: walkSpawn.z,
+        yaw: 0,
+        pitch: 0,
+      };
+    }
+  }, [walkSpawn]);
+
+  /* ---------------- Cursor + selection lockout while placing ---------- */
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.style.cursor = placingWalkSpawn ? 'crosshair' : '';
+    return () => {
+      canvas.style.cursor = '';
+    };
+  }, [placingWalkSpawn]);
 
   /* ---------------- Reactive objects sync ---------------- */
   useEffect(() => {

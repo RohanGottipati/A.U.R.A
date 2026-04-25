@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { FloorPlan, ObjectType, SceneFile, SceneObject, UseCaseCategory } from "../../types/scene";
 import { normalizeSceneFile } from "../scene-validation";
+import { resolveScenePlacements } from "../placement-resolver";
 
 // Real-world dimension envelope (in meters) per object type.
 // Each axis is [min, max]. Anything Agent 2 returns outside this range is
@@ -56,7 +57,7 @@ export function runAgent3(params: {
 }): SceneFile {
   const { floorplan, objects, useCaseCategory, placementNotes, useCase, floorplanImageUrl } = params;
 
-  const validatedObjects = objects.map((raw) => {
+  const sizedObjects = objects.map((raw) => {
     const obj = clampToRealistic(raw);
     return {
       ...obj,
@@ -66,6 +67,12 @@ export function runAgent3(params: {
       rotation: ((obj.rotation % 360) + 360) % 360,
     };
   });
+
+  // Apply deterministic placement post-processing: snap wall-anchored objects
+  // to walls, clamp every object inside its assigned room polygon, and
+  // separate any overlapping pairs. This is what makes the scene feel real
+  // when Agent 2's coordinates drift.
+  const validatedObjects = resolveScenePlacements(sizedObjects, floorplan);
 
   const sceneFile = {
     version: '1.0' as const,

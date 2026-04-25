@@ -7,6 +7,17 @@ import { callGemini, isGeminiServiceError } from "../gemini";
 import { normalizeAgent2Output, parseGeminiJsonResponse } from "../scene-validation";
 
 function buildAgent2Prompt(floorplan: FloorPlan, useCase: string): string {
+  // Compact room summary so Gemini can reason about per-room bounds without
+  // re-deriving them from the polygon arrays.
+  const roomSummary = floorplan.rooms
+    .map((r) => {
+      const cx = (r.x + r.width / 2).toFixed(2);
+      const cy = (r.y + r.height / 2).toFixed(2);
+      const area = (r.width * r.height).toFixed(1);
+      return `  - ${r.id} (${r.type}, "${r.name}"): bbox x=${r.x.toFixed(2)}..${(r.x + r.width).toFixed(2)} y=${r.y.toFixed(2)}..${(r.y + r.height).toFixed(2)} | center=(${cx},${cy}) | area=${area}m²`;
+    })
+    .join("\n");
+
   return `You will plan the configuration of a space and return strict JSON.
 
 You receive:
@@ -18,20 +29,32 @@ Return a single raw JSON object - no markdown, no commentary, no code fences.
 FLOOR PLAN GEOMETRY:
 ${JSON.stringify(floorplan, null, 2)}
 
+ROOM QUICK REFERENCE (use these EXACT room IDs in roomId fields):
+${roomSummary}
+
 USER USE CASE:
 "${useCase}"
 
-PLACEMENT RULES:
-- All x and y coordinates must be within the floor plan bounds (0 to ${floorplan.width} for x, 0 to ${floorplan.depth} for y)
-- Objects must not overlap each other. Maintain at least 1 meter clearance between objects.
-- Leave 1.5 meter clearance from all walls for walkways.
-- Place stages and presentation areas against walls, not in the center.
-- Place seating facing toward stages or screens.
-- For hackathons: hacking stations along walls, booths in center, stage at one end.
-- For events: round tables distributed across main area, stage at front, bar against a wall.
-- For offices: desks in rows or clusters, meeting rooms separated, lounge near entrance.
-- For factories: workstations in sequence along production flow, storage at back.
-- Staircases: if the floor plan geometry includes staircases (floorplan.staircases array), place a "staircase" object at each detected position using the x, y, width, depth, and rotation values directly from floorplan.staircases. Do not move detected staircases. If floorplan.staircases is empty, do not invent staircase objects. The roomId for each staircase must be the id of the nearest room from floorplan.rooms — NEVER use "global" or any id not present in floorplan.rooms.
+HARD CONSTRAINTS (the system will deterministically enforce these — do not violate them):
+- Every object's center (x, y) MUST lie inside the bounding box of its assigned room. Use the ROOM QUICK REFERENCE above.
+- roomId MUST be one of the room IDs listed above. Never use "global" or invented IDs.
+- Coordinates use METERS. x in [0, ${floorplan.width.toFixed(2)}], y in [0, ${floorplan.depth.toFixed(2)}].
+- Objects must not overlap each other (>=0.6m clearance edge-to-edge between non-anchored items).
+- Wall-anchored types (counter, kitchen_unit, shelf, bed, bathtub, sink, toilet, screen, divider, staircase, door, workstation) MUST be placed within 0.5m of a room wall — set the center on the wall line offset inward by half its depth. Their rotation must orient the front of the object toward the room interior (back against the wall).
+- Free-standing types (table, chair, podium, plant, entrance_marker, booth, stage, equipment) need >=0.4m clearance from walls.
+- Seating (chair) MUST face toward the nearest table, desk, stage, or screen — set rotation accordingly (rotation 0° = facing +y, 90° = facing +x, 180° = facing -y, 270° = facing -x).
+- Pair tables with chairs (4-6 chairs per dining/round table; 1-2 chairs per desk) and place them in a tight grouping (chairs within 0.7m of their table).
+- Doors must be placed AT a wall opening between two adjacent rooms; their rotation must align with the wall they sit on.
+
+USE-CASE PATTERNS (apply only the relevant one):
+- hackathons: hacking desks in clusters of 4 along walls, sponsor booths in central rows, stage at one end of the main hall.
+- events: round tables (table+6 chairs) distributed evenly across main hall, stage at front-center against a wall, counter/bar against side wall.
+- offices: desks in rows or pods of 4-6, screens on the main wall of meeting-room types, plants and lounge chairs near entrance.
+- factories: workstations sequenced along one axis (production flow), shelves along the back wall, equipment near power-side wall.
+- classrooms: rows of desks facing one screen on the front wall, podium next to the screen.
+- retail: shelves along walls, counter near entrance, plants for ambience.
+
+STAIRCASES: if floorplan.staircases is non-empty, emit one "staircase" object per entry copying x, y, width, depth, rotation directly. roomId must be the nearest room. If floorplan.staircases is empty, do NOT invent staircase objects.
 
 AVAILABLE OBJECT TYPES (you MUST use ONLY these exact strings for the "type" field — no others):
 - table: 2.0m wide, 1.0m deep, 0.75m tall  (use for any table-like surface incl. round/conference/dining)
@@ -91,7 +114,14 @@ Return this exact structure:
   "placementNotes": "<explain your placement decisions in 2-3 sentences>"
 }
 
-Place enough objects to make the space look fully configured. For a large hall aim for 15-40 objects. For a small room aim for 5-15 objects.`;
+Place enough objects to make the space look fully configured. For a large hall aim for 15-40 objects. For a small room aim for 5-15 objects.
+
+QUALITY CHECK before returning:
+1. Every object's roomId is in the ROOM QUICK REFERENCE list above.
+2. Every (x, y) is inside that room's bbox.
+3. No two non-anchored objects share the same (x, y) within 0.6m.
+4. Wall-anchored items are within 0.5m of a wall.
+5. Each table has chairs grouped around it.`;
 }
 
 type Agent2Result = {

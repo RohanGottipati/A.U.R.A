@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import ThreeScene from './ThreeScene';
 import SceneSidebar from './SceneSidebar';
 import { SceneFile, SceneObject, ObjectType } from '@/types/scene';
@@ -41,53 +41,113 @@ export default function SceneViewer({ sceneData }: Props) {
 
   const [objects, setObjects] = useState<SceneObject[]>(sceneData.configuration.objects);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sceneId, setSceneId] = useState<string>(sceneData.sceneId);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
+  const [saveToastIsError, setSaveToastIsError] = useState(false);
 
-  const selectedObject = objects.find(o => o.id === selectedId) ?? null;
+  // Walk-mode "click to choose your starting point" flow.
+  const [placingWalkSpawn, setPlacingWalkSpawn] = useState(false);
+  const [walkSpawn, setWalkSpawn] = useState<{ x: number; z: number } | null>(null);
 
-  const updateObject = (id: string, changes: Partial<SceneObject>) => {
-    setObjects(prev => prev.map(o => o.id === id ? { ...o, ...changes } : o));
+  // Three.js writes the current orbit target into this ref every frame so
+  // we can spawn new objects under the user's current view.
+  const cameraTargetRef = useRef<{ x: number; z: number } | null>(null);
+
+  const selectedObject = objects.find((o) => o.id === selectedId) ?? null;
+
+  // Reset local state when a fresh scene is loaded (e.g. navigation).
+  useEffect(() => {
+    setObjects(sceneData.configuration.objects);
+    setSceneId(sceneData.sceneId);
+    setSelectedId(null);
+    setIsDirty(false);
+  }, [sceneData]);
+
+  const updateObject = useCallback((id: string, changes: Partial<SceneObject>) => {
+    setObjects((prev) => prev.map((o) => (o.id === id ? { ...o, ...changes } : o)));
     setIsDirty(true);
-  };
+  }, []);
 
-  const deleteObject = (id: string) => {
-    setObjects(prev => prev.filter(o => o.id !== id));
+  const deleteObject = useCallback((id: string) => {
+    setObjects((prev) => prev.filter((o) => o.id !== id));
     setSelectedId(null);
     setIsDirty(true);
-  };
+  }, []);
 
-  const addObject = (type: ObjectType) => {
-    const sizes = DEFAULT_SIZES[type];
-    const newObj: SceneObject = {
-      id: `obj_${Date.now()}`,
-      type,
-      roomId: sceneData.floorplan.rooms[0]?.id ?? 'room_1',
-      x: sceneData.floorplan.width / 2,
-      y: sceneData.floorplan.depth / 2,
-      z: 0,
-      ...sizes,
-      rotation: 0,
-      label: `${type.charAt(0).toUpperCase() + type.slice(1)} ${objects.length + 1}`,
-    };
-    setObjects(prev => [...prev, newObj]);
-    setSelectedId(newObj.id);
-    setIsDirty(true);
-  };
+  const addObject = useCallback(
+    (type: ObjectType) => {
+      const sizes = DEFAULT_SIZES[type];
+      const fpW = sceneData.floorplan.width;
+      const fpD = sceneData.floorplan.depth;
 
-  // Suppress unused variable warnings for state used later
-  void isDirty; void isSaving; void saveToast; void setSaveToast;
+      // Drop the new object where the user is currently looking (orbit
+      // target) so it lands inside the visible viewport rather than at the
+      // dead centre of the floor plan.
+      const target = cameraTargetRef.current;
+      const rawX = target ? target.x : fpW / 2;
+      const rawY = target ? target.z : fpD / 2;
+      const margin = Math.max(sizes.width, sizes.depth) / 2 + 0.1;
+      const x = Math.max(margin, Math.min(fpW - margin, rawX));
+      const y = Math.max(margin, Math.min(fpD - margin, rawY));
+
+      const newObj: SceneObject = {
+        id: `obj_${Date.now()}`,
+        type,
+        roomId: sceneData.floorplan.rooms[0]?.id ?? 'room_1',
+        x,
+        y,
+        z: 0,
+        ...sizes,
+        rotation: 0,
+        label: `${type.charAt(0).toUpperCase() + type.slice(1)} ${objects.length + 1}`,
+      };
+      setObjects((prev) => [...prev, newObj]);
+      setSelectedId(newObj.id);
+      setIsDirty(true);
+    },
+    [sceneData.floorplan, objects.length],
+  );
 
   const handleShare = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      const url = `${window.location.origin}/scene/${sceneId}`;
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [sceneId]);
+
+  const handleSave = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch('/api/scene/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ originalSceneId: sceneId, objects }),
+      });
+      if (!response.ok) throw new Error('Save failed');
+
+      const { newSceneId } = (await response.json()) as { newSceneId: string };
+
+      window.history.pushState({}, '', `/scene/${newSceneId}`);
+      setSceneId(newSceneId);
+      setIsDirty(false);
+
+      setSaveToastIsError(false);
+      setSaveToast('Scene saved as new version');
+      setTimeout(() => setSaveToast(null), 3000);
+    } catch {
+      setSaveToastIsError(true);
+      setSaveToast('Save failed. Please try again.');
+      setTimeout(() => setSaveToast(null), 3000);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [sceneId, objects]);
 
   // Track pointer-lock state to show / hide the "click to enable mouse look" hint
   useEffect(() => {
@@ -96,6 +156,35 @@ export default function SceneViewer({ sceneData }: Props) {
     };
     document.addEventListener('pointerlockchange', onPointerLockChange);
     return () => document.removeEventListener('pointerlockchange', onPointerLockChange);
+  }, []);
+
+  // ESC cancels the "place your spawn" step and returns to plain orbit mode.
+  useEffect(() => {
+    if (!placingWalkSpawn) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPlacingWalkSpawn(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [placingWalkSpawn]);
+
+  const handleModeButton = useCallback(() => {
+    if (mode === 'walk') {
+      setMode('orbit');
+      setPlacingWalkSpawn(false);
+      return;
+    }
+    if (placingWalkSpawn) {
+      setPlacingWalkSpawn(false);
+      return;
+    }
+    setPlacingWalkSpawn(true);
+  }, [mode, placingWalkSpawn]);
+
+  const handleWalkSpawnSelected = useCallback((x: number, z: number) => {
+    setWalkSpawn({ x, z });
+    setPlacingWalkSpawn(false);
+    setMode('walk');
   }, []);
 
   const useCase = sceneData.configuration.useCase || 'Untitled scene';
@@ -133,6 +222,10 @@ export default function SceneViewer({ sceneData }: Props) {
         selectedId={selectedId}
         onSelectObject={setSelectedId}
         onMoveObject={(id, x, y) => updateObject(id, { x, y })}
+        cameraTargetRef={cameraTargetRef}
+        placingWalkSpawn={placingWalkSpawn}
+        walkSpawn={walkSpawn}
+        onWalkSpawnSelected={handleWalkSpawnSelected}
       />
       <SceneSidebar
         objects={objects}
@@ -175,13 +268,23 @@ export default function SceneViewer({ sceneData }: Props) {
       <div className={styles.actions}>
         <button
           type="button"
-          onClick={() => setMode(isWalk ? 'orbit' : 'walk')}
-          className={`${styles.btn} ${styles.bracket} ${isWalk ? styles.btnWalkActive : ''}`}
+          onClick={handleModeButton}
+          className={`${styles.btn} ${styles.bracket} ${
+            isWalk || placingWalkSpawn ? styles.btnWalkActive : ''
+          }`}
         >
           <span className={styles.brBL} />
           <span className={styles.brBR} />
-          <span className={styles.btnIcon}>{isWalk ? '\u2295' : '\u25CE'}</span>
-          <span>{isWalk ? 'WALK MODE' : 'ORBIT MODE'}</span>
+          <span className={styles.btnIcon}>
+            {isWalk ? '\u2295' : placingWalkSpawn ? '\u2715' : '\u25CE'}
+          </span>
+          <span>
+            {isWalk
+              ? 'WALK MODE'
+              : placingWalkSpawn
+                ? 'CANCEL'
+                : 'ORBIT MODE'}
+          </span>
         </button>
 
         <button
@@ -235,6 +338,19 @@ export default function SceneViewer({ sceneData }: Props) {
         )}
       </div>
 
+      {/* ============== Bottom-center: Walk-spawn Placement Hint ============== */}
+      {placingWalkSpawn && !isWalk && (
+        <div className={`${styles.spawnHint} ${styles.bracket}`}>
+          <span className={styles.brBL} />
+          <span className={styles.brBR} />
+          <span className={styles.spawnHintIcon} aria-hidden>
+            {'\u25CE'}
+          </span>
+          <span>CLICK ON THE FLOOR TO CHOOSE YOUR STARTING POINT</span>
+          <span className={styles.spawnHintEsc}>ESC TO CANCEL</span>
+        </div>
+      )}
+
       {/* ============== Bottom-right: Confidence ============== */}
       {hasConfidence && (
         <div
@@ -248,6 +364,42 @@ export default function SceneViewer({ sceneData }: Props) {
           </span>
         </div>
       )}
+
+      {/* ============== Bottom-center: Save Toast ============== */}
+      <div
+        className={`${styles.saveToast} ${
+          saveToast ? styles.saveToastVisible : ''
+        } ${saveToastIsError ? styles.saveToastError : ''}`}
+        role="status"
+        aria-live="polite"
+      >
+        {saveToast ?? ''}
+      </div>
+
+      {/* ============== Bottom-center: Save & Share ============== */}
+      <div
+        className={`${styles.saveBtnWrap} ${
+          isDirty ? styles.saveBtnVisible : styles.saveBtnHidden
+        }`}
+      >
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving}
+          className={styles.saveBtn}
+        >
+          {isSaving ? (
+            <>
+              <span className={styles.saveBtnSpinner} aria-hidden>
+                {'\u25CC'}
+              </span>
+              <span>{'  SAVING...'}</span>
+            </>
+          ) : (
+            <span>{'\uD83D\uDCBE  SAVE'}</span>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
