@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /app/api/upload/route.ts (FloorPlan AI upload)
 import { requireUser } from "@/lib/auth";
 import { jsonWithCors, optionsResponse } from "@/lib/http";
 import { INITIAL_JOB_LOG, INITIAL_JOB_STEP } from "@/lib/jobs";

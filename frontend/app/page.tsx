@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /app/page.tsx (FloorPlan AI landing page)
 "use client";
 
 import { motion } from "framer-motion";

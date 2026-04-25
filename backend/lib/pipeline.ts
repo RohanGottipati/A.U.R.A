@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /lib/backboard.ts (FloorPlan AI Backboard pipeline)
 import { prisma } from "@/lib/prisma";
 import type { JobStatus } from "@/lib/types";
 

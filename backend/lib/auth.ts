@@ -1,3 +1,4 @@
+// DEPRECATED - FloorPlan AI does not use NextAuth
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { getServerSession, type NextAuthOptions } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";

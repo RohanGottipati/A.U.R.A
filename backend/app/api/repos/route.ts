@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by FloorPlan AI upload flow; GitHub repos not needed
 import { Octokit } from "@octokit/rest";
 import { getServerSession } from "next-auth";
 

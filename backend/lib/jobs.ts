@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /lib/db.ts (FloorPlan AI raw PostgreSQL client)
 import type { Job } from "@prisma/client";
 
 import type { JobDetailResponse, JobListItemResponse } from "@/lib/types";

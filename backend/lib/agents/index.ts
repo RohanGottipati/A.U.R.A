@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by /lib/agents/ (FloorPlan AI Gemini-based agents)
 /**
  * agents/index.ts – Barrel export for AI agent modules.
  *

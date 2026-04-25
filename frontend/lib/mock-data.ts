@@ -1,3 +1,4 @@
+// DEPRECATED - replaced by FloorPlan AI components with real API calls
 export interface MockRepo {
   id: string;
   fullName: string;
