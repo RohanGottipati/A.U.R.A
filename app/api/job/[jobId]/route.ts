@@ -1,15 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { NextRequest, NextResponse } from "next/server";
+
+import { db } from "@/lib/db";
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: 'Preparing your floor plan...',
-  agent1_running: 'Reading floor plan geometry...',
-  agent1_done: 'Floor plan extracted!',
-  agent2_running: 'Planning object placement...',
-  agent2_done: 'Objects placed!',
-  agent3_running: 'Assembling 3D scene...',
-  complete: 'Scene ready!',
-  failed: 'Processing failed',
+  pending: "Preparing your floor plan...",
+  agent1_running: "Reading floor plan geometry...",
+  agent1_done: "Floor plan extracted!",
+  agent2_running: "Planning object placement...",
+  agent2_done: "Objects placed!",
+  agent3_running: "Assembling 3D scene...",
+  complete: "Scene ready!",
+  failed: "Processing failed",
 };
 
 const STATUS_PROGRESS: Record<string, number> = {
@@ -24,15 +25,20 @@ const STATUS_PROGRESS: Record<string, number> = {
 };
 
 export async function GET(_req: NextRequest, { params }: { params: { jobId: string } }) {
-  const job = await db.getJob(params.jobId);
+  try {
+    const job = await db.getJob(params.jobId);
 
-  if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+    if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
-  return NextResponse.json({
-    status: job.status,
-    label: STATUS_LABELS[job.status] ?? job.status,
-    progress: STATUS_PROGRESS[job.status] ?? 0,
-    sceneId: job.scene_id ?? null,
-    error: job.error_message ?? null,
-  });
+    return NextResponse.json({
+      status: job.status,
+      label: STATUS_LABELS[job.status] ?? job.status,
+      progress: STATUS_PROGRESS[job.status] ?? 0,
+      sceneId: job.scene_id ?? null,
+      error: job.error_message ?? null,
+    });
+  } catch (error) {
+    console.error("Job status fetch error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

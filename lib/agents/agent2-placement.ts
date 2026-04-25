@@ -1,5 +1,8 @@
-import { callGemini } from '../gemini';
-import { FloorPlan, SceneObject, UseCaseCategory } from '../../types/scene';
+import { FloorPlan, SceneObject, UseCaseCategory } from "../../types/scene";
+
+import { buildFallbackPlacement } from "./fallback";
+import { callGemini, isGeminiServiceError } from "../gemini";
+import { normalizeAgent2Output, parseGeminiJsonResponse } from "../scene-validation";
 
 function buildAgent2Prompt(floorplan: FloorPlan, useCase: string): string {
   return `
@@ -76,25 +79,16 @@ export async function runAgent2(
   useCase: string
 ): Promise<{ objects: SceneObject[]; useCaseCategory: UseCaseCategory; placementNotes: string }> {
   const prompt = buildAgent2Prompt(floorplan, useCase);
-  const rawResponse = await callGemini(prompt);
-
-  const cleaned = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-  let parsed: { objects: SceneObject[]; useCaseCategory: UseCaseCategory; placementNotes: string };
   try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    throw new Error(`Agent 2 returned invalid JSON: ${cleaned.substring(0, 500)}`);
+    const rawResponse = await callGemini(prompt, undefined, {
+      responseMimeType: "application/json",
+    });
+    return normalizeAgent2Output(parseGeminiJsonResponse(rawResponse), floorplan);
+  } catch (error) {
+    if (isGeminiServiceError(error)) {
+      return buildFallbackPlacement(floorplan, useCase);
+    }
+
+    throw error;
   }
-
-  if (!parsed.objects || parsed.objects.length === 0) {
-    throw new Error('Agent 2 placed no objects in the scene');
-  }
-
-  parsed.objects = parsed.objects.map((obj, i) => ({
-    ...obj,
-    id: obj.id ?? `obj_${i + 1}`,
-  }));
-
-  return parsed;
 }

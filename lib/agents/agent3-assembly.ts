@@ -1,5 +1,7 @@
-import { FloorPlan, SceneObject, SceneFile, UseCaseCategory } from '../../types/scene';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
+
+import { FloorPlan, SceneFile, SceneObject, UseCaseCategory } from "../../types/scene";
+import { normalizeSceneFile } from "../scene-validation";
 
 export function runAgent3(params: {
   floorplan: FloorPlan;
@@ -10,7 +12,7 @@ export function runAgent3(params: {
 }): SceneFile {
   const { floorplan, objects, useCaseCategory, placementNotes, useCase } = params;
 
-  const validatedObjects = objects.map(obj => ({
+  const validatedObjects = objects.map((obj) => ({
     ...obj,
     x: Math.max(obj.width / 2, Math.min(floorplan.width - obj.width / 2, obj.x)),
     y: Math.max(obj.depth / 2, Math.min(floorplan.depth - obj.depth / 2, obj.y)),
@@ -18,7 +20,7 @@ export function runAgent3(params: {
     rotation: ((obj.rotation % 360) + 360) % 360,
   }));
 
-  const sceneFile: SceneFile = {
+  const sceneFile = {
     version: '1.0',
     sceneId: uuidv4(),
     createdAt: new Date().toISOString(),
@@ -31,5 +33,5 @@ export function runAgent3(params: {
     },
   };
 
-  return sceneFile;
+  return normalizeSceneFile(sceneFile);
 }

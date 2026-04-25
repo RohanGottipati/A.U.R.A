@@ -1,5 +1,8 @@
-import { callGemini, imageUrlToPart } from '../gemini';
-import { FloorPlan } from '../../types/scene';
+import { FloorPlan } from "../../types/scene";
+
+import { buildFallbackFloorPlan } from "./fallback";
+import { callGemini, fetchImageData, imageBufferToPart, isGeminiServiceError } from "../gemini";
+import { normalizeFloorPlan, parseGeminiJsonResponse } from "../scene-validation";
 
 const AGENT1_PROMPT = `
 You are a floor plan analysis expert. You will receive an image of a floor plan.
@@ -41,29 +44,19 @@ CRITICAL: Return ONLY a valid JSON object. No markdown, no explanation, no code 
 `;
 
 export async function runAgent1(floorplanImageUrl: string): Promise<FloorPlan> {
-  const imagePart = await imageUrlToPart(floorplanImageUrl);
-  const rawResponse = await callGemini(AGENT1_PROMPT, [imagePart]);
+  const { buffer, mimeType } = await fetchImageData(floorplanImageUrl);
+  const imagePart = imageBufferToPart(buffer, mimeType);
 
-  const cleaned = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-  let parsed: FloorPlan;
   try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    throw new Error(`Agent 1 returned invalid JSON: ${cleaned.substring(0, 500)}`);
-  }
+    const rawResponse = await callGemini(AGENT1_PROMPT, [imagePart], {
+      responseMimeType: "application/json",
+    });
+    return normalizeFloorPlan(parseGeminiJsonResponse(rawResponse));
+  } catch (error) {
+    if (isGeminiServiceError(error)) {
+      return buildFallbackFloorPlan(buffer, mimeType);
+    }
 
-  if (!parsed.rooms || parsed.rooms.length === 0) {
-    throw new Error('Agent 1 detected no rooms in the floor plan');
+    throw error;
   }
-  if (!parsed.walls || parsed.walls.length === 0) {
-    parsed.walls = [
-      { x1: 0, y1: 0, x2: parsed.width, y2: 0, height: 3.0 },
-      { x1: parsed.width, y1: 0, x2: parsed.width, y2: parsed.depth, height: 3.0 },
-      { x1: parsed.width, y1: parsed.depth, x2: 0, y2: parsed.depth, height: 3.0 },
-      { x1: 0, y1: parsed.depth, x2: 0, y2: 0, height: 3.0 },
-    ];
-  }
-
-  return parsed;
 }
