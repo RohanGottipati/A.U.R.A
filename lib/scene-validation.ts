@@ -137,15 +137,32 @@ function readEnumValue<T extends string>(
   allowed: readonly T[],
   options?: { defaultValue?: T },
 ): T {
-  if (value === undefined && options?.defaultValue !== undefined) {
+  if (value === undefined || value === null) {
+    if (options?.defaultValue !== undefined) {
+      return options.defaultValue;
+    }
+    throw new Error(`${field} must be one of: ${allowed.join(", ")}`);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (allowed.includes(trimmed as T)) {
+      return trimmed as T;
+    }
+    // Try lowercased + underscored normalization for tolerance.
+    const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+    if (allowed.includes(normalized as T)) {
+      return normalized as T;
+    }
+    if (options?.defaultValue !== undefined) {
+      return options.defaultValue;
+    }
+    throw new Error(`${field} must be one of: ${allowed.join(", ")} (got: ${trimmed})`);
+  }
+
+  if (options?.defaultValue !== undefined) {
     return options.defaultValue;
   }
-
-  const parsed = readString(value, field);
-  if (allowed.includes(parsed as T)) {
-    return parsed as T;
-  }
-
   throw new Error(`${field} must be one of: ${allowed.join(", ")}`);
 }
 

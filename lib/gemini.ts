@@ -9,7 +9,12 @@ function getModel() {
     genai = new GoogleGenerativeAI(getEnv().GEMINI_API_KEY);
   }
 
-  return genai.getGenerativeModel({ model: "gemini-2.0-flash" });
+  // gemini-2.5-flash is the current production-ready vision-capable model on the
+  // free tier. The implementation.MD spec mentions gemini-2.0-flash but Google
+  // has retired that endpoint for new free-tier projects (returns 0 quota).
+  const modelName = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+
+  return genai.getGenerativeModel({ model: modelName });
 }
 
 export async function fetchImageData(url: string): Promise<{ buffer: Buffer; mimeType: string }> {

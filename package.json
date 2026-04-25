@@ -12,7 +12,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck",
-    "seed-demo": "node --import tsx scripts/seed-demo.ts"
+    "seed-demo": "node --import tsx scripts/seed-demo.ts",
+    "setup-backboard": "node --import tsx scripts/setup-backboard.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1037.0",

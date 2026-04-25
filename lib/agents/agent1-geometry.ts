@@ -4,8 +4,7 @@ import { buildFallbackFloorPlan } from "./fallback";
 import { callGemini, fetchImageData, imageBufferToPart, isGeminiServiceError } from "../gemini";
 import { normalizeFloorPlan, parseGeminiJsonResponse } from "../scene-validation";
 
-const AGENT1_PROMPT = `
-You are a floor plan analysis expert. You will receive an image of a floor plan.
+const AGENT1_PROMPT = `You are a floor plan analysis expert. You will receive an image of a floor plan.
 
 Your task is to extract the physical geometry of the space and return it as structured JSON.
 
@@ -40,9 +39,12 @@ Return this exact structure:
   "notes": "<any important observations about the floor plan>"
 }
 
-CRITICAL: Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON.
-`;
+CRITICAL: Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON.`;
 
+// NOTE: Agent 1 uses direct Gemini Vision API (not Backboard).
+// Backboard's image attachment pipeline indexes images as text summaries (document RAG),
+// so the underlying LLM never sees actual pixels. Real vision analysis requires the
+// inlineData multimodal path that Gemini exposes natively.
 export async function runAgent1(floorplanImageUrl: string): Promise<FloorPlan> {
   const { buffer, mimeType } = await fetchImageData(floorplanImageUrl);
   const imagePart = imageBufferToPart(buffer, mimeType);
@@ -54,6 +56,7 @@ export async function runAgent1(floorplanImageUrl: string): Promise<FloorPlan> {
     return normalizeFloorPlan(parseGeminiJsonResponse(rawResponse));
   } catch (error) {
     if (isGeminiServiceError(error)) {
+      console.warn("Gemini agent 1 failed, using rule-based fallback:", error);
       return buildFallbackFloorPlan(buffer, mimeType);
     }
 

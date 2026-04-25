@@ -1,18 +1,19 @@
 import { FloorPlan, SceneObject, UseCaseCategory } from "../../types/scene";
 
 import { buildFallbackPlacement } from "./fallback";
+import { ensureAssistant } from "../backboard-agents";
+import { isBackboardServiceError, runOnAssistant } from "../backboard-client";
 import { callGemini, isGeminiServiceError } from "../gemini";
 import { normalizeAgent2Output, parseGeminiJsonResponse } from "../scene-validation";
 
 function buildAgent2Prompt(floorplan: FloorPlan, useCase: string): string {
-  return `
-You are an expert spatial planner who arranges spaces for real-world events and operations.
+  return `You will plan the configuration of a space and return strict JSON.
 
-You will receive:
+You receive:
 1. A floor plan geometry (extracted from an image)
 2. A use case description from the user
 
-Your task is to decide what objects to place in the space and exactly where, then return structured JSON.
+Return a single raw JSON object - no markdown, no commentary, no code fences.
 
 FLOOR PLAN GEOMETRY:
 ${JSON.stringify(floorplan, null, 2)}
@@ -32,20 +33,20 @@ PLACEMENT RULES:
 - For factories: workstations in sequence along production flow, storage at back.
 
 AVAILABLE OBJECT TYPES AND DEFAULT SIZES:
-- table: 2.0m wide, 1.0m deep, 0.75m tall (for dining/work)
+- table: 2.0m wide, 1.0m deep, 0.75m tall
 - chair: 0.5m wide, 0.5m deep, 0.9m tall
-- stage: 8.0m wide, 4.0m deep, 0.5m tall (raised platform)
-- booth: 2.0m wide, 2.0m deep, 2.0m tall (sponsor/exhibition)
-- desk: 1.5m wide, 0.8m deep, 0.75m tall (office desk)
-- podium: 0.6m wide, 0.6m deep, 1.1m tall (speaker podium)
-- screen: 3.0m wide, 0.1m deep, 2.0m tall (display screen)
-- workstation: 2.0m wide, 1.5m deep, 1.0m tall (industrial)
-- shelf: 1.0m wide, 0.4m deep, 2.0m tall (storage)
-- counter: 2.0m wide, 0.8m deep, 0.9m tall (bar/reception)
-- equipment: 1.5m wide, 1.5m deep, 1.2m tall (generic machinery)
-- divider: 3.0m wide, 0.1m deep, 1.8m tall (partition panel)
+- stage: 8.0m wide, 4.0m deep, 0.5m tall
+- booth: 2.0m wide, 2.0m deep, 2.0m tall
+- desk: 1.5m wide, 0.8m deep, 0.75m tall
+- podium: 0.6m wide, 0.6m deep, 1.1m tall
+- screen: 3.0m wide, 0.1m deep, 2.0m tall
+- workstation: 2.0m wide, 1.5m deep, 1.0m tall
+- shelf: 1.0m wide, 0.4m deep, 2.0m tall
+- counter: 2.0m wide, 0.8m deep, 0.9m tall
+- equipment: 1.5m wide, 1.5m deep, 1.2m tall
+- divider: 3.0m wide, 0.1m deep, 1.8m tall
 
-CATEGORIZE the use case as one of: event, hackathon, office, factory, classroom, retail, other
+CATEGORIZE the use case as exactly one of: event, hackathon, office, factory, classroom, retail, other.
 
 Return this exact structure:
 {
@@ -68,27 +69,59 @@ Return this exact structure:
   "placementNotes": "<explain your placement decisions in 2-3 sentences>"
 }
 
-Place enough objects to make the space look fully configured. For a large hall aim for 15-40 objects. For a small room aim for 5-15 objects.
+Place enough objects to make the space look fully configured. For a large hall aim for 15-40 objects. For a small room aim for 5-15 objects.`;
+}
 
-CRITICAL: Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON.
-`;
+type Agent2Result = {
+  objects: SceneObject[];
+  useCaseCategory: UseCaseCategory;
+  placementNotes: string;
+};
+
+async function runAgent2ViaBackboard(prompt: string, floorplan: FloorPlan): Promise<Agent2Result> {
+  const assistantId = await ensureAssistant("agent2");
+  const rawResponse = await runOnAssistant({
+    assistantId,
+    message: {
+      content: prompt,
+      jsonOutput: true,
+    },
+  });
+
+  return normalizeAgent2Output(parseGeminiJsonResponse(rawResponse), floorplan);
+}
+
+async function runAgent2ViaGeminiDirect(prompt: string, floorplan: FloorPlan): Promise<Agent2Result> {
+  const rawResponse = await callGemini(prompt, undefined, {
+    responseMimeType: "application/json",
+  });
+  return normalizeAgent2Output(parseGeminiJsonResponse(rawResponse), floorplan);
 }
 
 export async function runAgent2(
   floorplan: FloorPlan,
-  useCase: string
-): Promise<{ objects: SceneObject[]; useCaseCategory: UseCaseCategory; placementNotes: string }> {
+  useCase: string,
+): Promise<Agent2Result> {
   const prompt = buildAgent2Prompt(floorplan, useCase);
+
   try {
-    const rawResponse = await callGemini(prompt, undefined, {
-      responseMimeType: "application/json",
-    });
-    return normalizeAgent2Output(parseGeminiJsonResponse(rawResponse), floorplan);
-  } catch (error) {
-    if (isGeminiServiceError(error)) {
-      return buildFallbackPlacement(floorplan, useCase);
+    return await runAgent2ViaBackboard(prompt, floorplan);
+  } catch (backboardError) {
+    if (!isBackboardServiceError(backboardError)) {
+      throw backboardError;
     }
 
-    throw error;
+    console.warn("Backboard agent 2 failed, retrying with direct Gemini:", backboardError);
+
+    try {
+      return await runAgent2ViaGeminiDirect(prompt, floorplan);
+    } catch (geminiError) {
+      if (isGeminiServiceError(geminiError)) {
+        console.warn("Gemini agent 2 failed, using rule-based fallback:", geminiError);
+        return buildFallbackPlacement(floorplan, useCase);
+      }
+
+      throw geminiError;
+    }
   }
 }

@@ -1,6 +1,7 @@
 import { runAgent1 } from "./agents/agent1-geometry";
 import { runAgent2 } from "./agents/agent2-placement";
 import { runAgent3 } from "./agents/agent3-assembly";
+import { isBackboardServiceError } from "./backboard-client";
 import { db } from "./db";
 import { getEnv } from "./env";
 import { isGeminiQuotaError, isGeminiServiceError } from "./gemini";
@@ -15,6 +16,10 @@ function formatPipelineError(error: unknown): string {
 
   if (isGeminiServiceError(error)) {
     return "Gemini API request failed. Please retry after confirming the API key, quota, and network access.";
+  }
+
+  if (isBackboardServiceError(error)) {
+    return `Backboard API request failed: ${message.substring(0, 240)}`;
   }
 
   if (/Failed to fetch image/i.test(message)) {
