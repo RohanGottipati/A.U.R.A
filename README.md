@@ -1,82 +1,62 @@
-# A.U.R.A – Automated UI Redesign Assistant
+# A.U.R.A
 
-A Next.js 14 App Router web app where users connect a GitHub repo, the backend fetches UI files, runs an AI redesign pipeline, and eventually opens a GitHub PR with the results.
+A.U.R.A is now organized as a small npm workspace with separate frontend and backend Next.js apps.
 
-## Tech Stack
+## Structure
 
-- **Framework** – Next.js 14 (App Router)
-- **Language** – TypeScript
-- **Styling** – Tailwind CSS + Framer Motion
-- **Database** – PostgreSQL via Prisma
-- **Auth** – NextAuth with GitHub OAuth + Prisma adapter
-- **GitHub API** – Octokit
-- **AI** – OpenAI SDK, Google Gemini (via fetch)
-- **Storage** – Vultr Object Storage (S3-compatible, via `@aws-sdk/client-s3`)
+```text
+A.U.R.A/
+  frontend/  # Next.js UI app on http://localhost:3000
+  backend/   # Next.js API app on http://localhost:3001
+```
+
+- `frontend/` contains the landing page, dashboard, run-progress UI, fonts, styling, and the browser-facing API client.
+- `backend/` contains the API routes, Prisma schema/client, pipeline scaffolding, backend-only types, and auth/database env settings.
+- The repo root keeps the shared workspace scripts and docs.
 
 ## Getting Started
 
 ```bash
-# 1. Install dependencies
+# 1. Install workspace dependencies from the repo root
 npm install
 
-# 2. Copy env template and fill in your values
-cp .env.local.example .env.local
+# 2. Create app-specific env files
+cp frontend/.env.local.example frontend/.env.local
+cp backend/.env.local.example backend/.env.local
 
-# 3. Generate Prisma client (requires DATABASE_URL in .env.local)
-npx prisma generate
+# 3. Generate Prisma client and sync the database
+npm run db:generate -w backend
+npm run db:push -w backend
 
-# 4. Run database migrations
-npx prisma db push
-
-# 5. Start development server
+# 4. Start both apps from the repo root
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Frontend runs on [http://localhost:3000](http://localhost:3000). Backend runs on [http://localhost:3001](http://localhost:3001).
 
-## Project Structure
-
-```
-app/
-  api/
-    health/route.ts        # Health-check endpoint
-    jobs/route.ts          # POST to create a job, GET to list jobs
-    jobs/[jobId]/route.ts  # GET a single job
-  dashboard/page.tsx       # Dashboard – list jobs, start new runs
-  run/[jobId]/page.tsx     # Real-time pipeline progress view
-  layout.tsx               # Root layout
-  page.tsx                 # Landing page
-
-lib/
-  agents/index.ts          # AI agent barrel export (placeholder)
-  pipeline.ts              # Pipeline step definitions & runner skeleton
-  prisma.ts                # PrismaClient singleton
-  types.ts                 # Shared TypeScript types
-
-prisma/
-  schema.prisma            # Database schema (User, Account, Session, Job)
-
-types/
-  next-auth.d.ts           # NextAuth module augmentation
-```
-
-## Scripts
+## Root Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start dev server |
-| `npm run build` | Production build |
-| `npm run start` | Start production server |
-| `npm run lint` | Run ESLint |
+| `npm run dev` | Start frontend and backend together |
+| `npm run dev:frontend` | Start only the frontend app |
+| `npm run dev:backend` | Start only the backend app |
+| `npm run build` | Build backend, then frontend |
+| `npm run lint` | Lint backend, then frontend |
 
-## Phase 1 (this PR)
+## Backend Scripts
 
-Sets up the base project structure and placeholder files so that all team members can start building in parallel:
+| Command | Description |
+|---------|-------------|
+| `npm run db:generate -w backend` | Generate Prisma client |
+| `npm run db:push -w backend` | Push schema to the configured database |
+| `npm run db:studio -w backend` | Open Prisma Studio |
 
-- **Person B** – Wire up GitHub OAuth, NextAuth config, and the Prisma adapter.
-- **Person C** – Implement the pipeline agents (`lib/agents/`) and `runPipeline` logic.
-- **Person D** – Build the screenshot/Vision analysis step and S3 upload.
+## Current API Surface
 
-## License
+- `GET /api/health`
+- `GET /api/jobs`
+- `POST /api/jobs`
+- `GET /api/jobs/[jobId]`
 
-Private – for internal use only.
+The frontend reads the backend base URL from `NEXT_PUBLIC_API_BASE_URL`.
