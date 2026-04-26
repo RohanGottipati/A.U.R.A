@@ -41,6 +41,14 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${dmMono.variable} ${syne.variable} antialiased`}
       >
+        {/* Disable browser scroll restoration so the page always starts from the top.
+            Otherwise the scroll-driven hero renders mid-animation on the first paint
+            and only looks correct after a manual reload. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if('scrollRestoration' in history){history.scrollRestoration='manual';}window.scrollTo(0,0);}catch(e){}`,
+          }}
+        />
         <ModalProvider>{children}</ModalProvider>
       </body>
     </html>

@@ -1,9 +1,9 @@
 "use client";
 
 import { useRef, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useScrollProgress, smoothstep } from "@/hooks/useScrollProgress";
+import { useModal } from "@/context/ModalContext";
 
 const VIDEO_CLIPS = [
   { src: "https://customer-assets.emergentagent.com/job_flow-alive/artifacts/syhkm5s8_Video_UI_Animation_Desk_to_Blueprint.mp4", start: 0.00, end: 0.33, scrubStartSec: 0, scrubEndSec: undefined as number | undefined },
@@ -22,7 +22,7 @@ function clipOpacity(p: number, idx: number) {
 export default function ScrollSimulation() {
   const sectionRef = useRef<HTMLElement>(null);
   const [, progressRef] = useScrollProgress(sectionRef);
-  const router = useRouter();
+  const { openModal } = useModal();
 
   const v0Ref = useRef<HTMLVideoElement>(null);
   const v1Ref = useRef<HTMLVideoElement>(null);
@@ -69,13 +69,37 @@ export default function ScrollSimulation() {
         if (videoPrimed.current[i]) return;
         try {
           v.muted = true;
-          await v.play();
+          v.playsInline = true;
+          const playPromise = v.play();
+          if (playPromise && typeof playPromise.then === "function") {
+            await playPromise;
+          }
           v.pause();
           v.currentTime = 0;
           videoPrimed.current[i] = true;
-        } catch { /* ignore */ }
+        } catch {
+          // Autoplay may be blocked before user gesture — mark as primed anyway
+          // so the scroll-driven currentTime updates can still take effect.
+          // Setting currentTime works without play() once metadata is loaded.
+          if (v.readyState >= 1) {
+            videoPrimed.current[i] = true;
+          }
+        }
       };
-      v.addEventListener("canplay", prime, { once: true });
+      // Try priming on every signal that the video is ready, not just `canplay`,
+      // because on first uncached load `canplay` may fire late (or after the user
+      // has already started scrolling).
+      v.addEventListener("loadedmetadata", prime);
+      v.addEventListener("loadeddata", prime);
+      v.addEventListener("canplay", prime);
+      v.addEventListener("canplaythrough", prime);
+      // Kick it off immediately in case the video is already ready (cached).
+      if (v.readyState >= 1) {
+        videoDurations.current[i] = v.duration || 0;
+        prime();
+      } else {
+        try { v.load(); } catch { /* ignore */ }
+      }
 
       const onPlay = () => { if (videoPrimed.current[i]) { try { v.pause(); } catch { /* ignore */ } } };
       v.addEventListener("play", onPlay);
@@ -88,7 +112,10 @@ export default function ScrollSimulation() {
       cleanups.push(() => {
         v.removeEventListener("loadedmetadata", onMeta);
         v.removeEventListener("durationchange", onMeta);
+        v.removeEventListener("loadedmetadata", prime as EventListener);
+        v.removeEventListener("loadeddata", prime as EventListener);
         v.removeEventListener("canplay", prime as EventListener);
+        v.removeEventListener("canplaythrough", prime as EventListener);
         v.removeEventListener("play", onPlay);
         v.removeEventListener("seeking", onSeeking);
         v.removeEventListener("seeked", onSeeked);
@@ -114,7 +141,7 @@ export default function ScrollSimulation() {
         }
 
         const dur = videoDurations.current[i];
-        if (v && dur && videoPrimed.current[i]) {
+        if (v && dur && v.readyState >= 1) {
           if (op > 0.005) {
             try { if (!v.paused) v.pause(); } catch { /* ignore */ }
             const t = Math.min(1, Math.max(0, (p - clip.start) / (clip.end - clip.start)));
@@ -228,17 +255,18 @@ export default function ScrollSimulation() {
                 className="mt-7 sm:mt-9 flex flex-col sm:flex-row items-center justify-center gap-3 pointer-events-auto"
               >
                 <button
-                  onClick={() => router.push('/upload')}
+                  onClick={() => openModal("geminiKey")}
                   className="w-full sm:w-auto px-6 py-3 rounded-full bg-[#1a4fd6] text-white font-extrabold text-sm tracking-[-0.01em] transition-all duration-300 hover:bg-[#1d57f0] active:scale-[0.98]"
                 >
-                  Generate a Simulation
+                  Try with your API key
                 </button>
-                <a
-                  href="#problem"
+                <button
+                  type="button"
+                  onClick={() => openModal("demo")}
                   className="w-full sm:w-auto px-6 py-3 rounded-full bg-[#0a0a0f] text-white/90 font-extrabold text-sm tracking-[-0.01em] border border-white/10 transition-all duration-300 hover:bg-[#111118] hover:border-white/20 active:scale-[0.98] text-center"
                 >
-                  Watch the space evolve
-                </a>
+                  Watch demo
+                </button>
               </motion.div>
             </div>
           </div>
