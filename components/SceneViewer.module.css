@@ -198,21 +198,25 @@
   gap: 8px;
   font-family: var(--font-dm-mono), 'DM Mono', ui-monospace, Menlo, monospace;
   font-size: 11px;
-  letter-spacing: 0.2em;
+  font-weight: 700;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   background: var(--bg-glass);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border-cyan);
+  border: 1px solid rgba(0, 212, 255, 0.28);
   border-radius: 8px;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.82);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.18s ease;
   text-decoration: none;
 }
 
 .btn:hover {
-  opacity: 0.8;
+  border-color: rgba(0, 212, 255, 0.7);
+  color: #ffffff;
+  background: rgba(0, 212, 255, 0.06);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.14);
 }
 
 .btn:disabled {
@@ -229,17 +233,17 @@
 .btnWalkActive {
   border-color: var(--accent-cyan);
   color: var(--accent-cyan);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15) inset;
+  box-shadow: 0 0 14px rgba(0, 212, 255, 0.2) inset, 0 0 14px rgba(0, 212, 255, 0.12);
 }
 
 .btnCopied {
   color: var(--accent-green);
   border-color: var(--accent-green);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.15) inset;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.2) inset;
 }
 
 .btnNew:hover {
-  color: var(--text-primary);
+  color: #ffffff;
   opacity: 1;
 }
 
@@ -395,16 +399,17 @@
 
 .confidenceLabel {
   font-family: var(--font-dm-mono), 'DM Mono', ui-monospace, Menlo, monospace;
-  font-size: 8px;
-  letter-spacing: 0.2em;
-  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: rgba(255, 255, 255, 0.65);
   text-transform: uppercase;
 }
 
 .confidenceValue {
   font-family: var(--font-dm-mono), 'DM Mono', ui-monospace, Menlo, monospace;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .confHigh   { color: var(--accent-green); }
@@ -627,18 +632,18 @@
 .saveBtn {
   height: 46px;
   padding: 0 32px;
-  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
-  border: none;
+  /* Blueprint .cta-primary style — dark bg, cyan border, glow on hover */
+  background: linear-gradient(180deg, #0d141a 0%, #050507 100%);
+  border: 1px solid rgba(0, 212, 255, 0.5);
   border-radius: 10px;
-  color: #ffffff;
+  color: #d6fcff;
   font-family: var(--font-dm-mono), 'DM Mono', ui-monospace, Menlo, monospace;
   font-size: 11px;
-  letter-spacing: 0.25em;
+  font-weight: 700;
+  letter-spacing: 0.28em;
   cursor: pointer;
-  box-shadow:
-    0 4px 24px rgba(0, 212, 255, 0.25),
-    0 2px 8px rgba(0, 0, 0, 0.4);
-  transition: all 0.15s ease;
+  box-shadow: 0 0 0 0 rgba(0, 212, 255, 0);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
@@ -647,10 +652,13 @@
 }
 
 .saveBtn:hover:not(:disabled) {
+  border-color: rgba(0, 212, 255, 1);
+  color: #ffffff;
   transform: translateY(-1px);
   box-shadow:
-    0 6px 28px rgba(0, 212, 255, 0.35),
-    0 2px 8px rgba(0, 0, 0, 0.4);
+    0 0 0 1px rgba(0, 212, 255, 0.4),
+    0 12px 40px -8px rgba(0, 212, 255, 0.45),
+    0 0 60px -10px rgba(0, 212, 255, 0.35);
 }
 
 .saveBtn:active:not(:disabled) {
@@ -658,7 +666,7 @@
 }
 
 .saveBtn:disabled {
-  opacity: 0.7;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 

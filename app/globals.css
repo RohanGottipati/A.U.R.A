@@ -203,6 +203,26 @@ body {
   height: 1px;
 }
 
+/* ── Blueprint page shell ───────────────────────────────────────────────────
+   Standardised background treatment used by every full-page route.
+   Usage: wrap page content in a <div class="bp-shell"> … </div> and let
+   the four pseudo-layers render via sibling divs or the helper below.
+   The following utility drives the fixed blueprint image on the root wrapper.
+*/
+.bp-bg {
+  background-image: url('/blueprint-bg.png');
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* Corner-bracket accent — four absolute <span> children of a `relative` parent */
+.bracket-tl { position: absolute; top: 0; left: 0; width: 20px; height: 20px; border-top: 1px solid rgba(0,240,255,0.4); border-left: 1px solid rgba(0,240,255,0.4); border-top-left-radius: inherit; }
+.bracket-tr { position: absolute; top: 0; right: 0; width: 20px; height: 20px; border-top: 1px solid rgba(0,240,255,0.4); border-right: 1px solid rgba(0,240,255,0.4); border-top-right-radius: inherit; }
+.bracket-bl { position: absolute; bottom: 0; left: 0; width: 20px; height: 20px; border-bottom: 1px solid rgba(0,240,255,0.4); border-left: 1px solid rgba(0,240,255,0.4); border-bottom-left-radius: inherit; }
+.bracket-br { position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; border-bottom: 1px solid rgba(0,240,255,0.4); border-right: 1px solid rgba(0,240,255,0.4); border-bottom-right-radius: inherit; }
+
 @layer base {
   :root {
     --background: 240 6% 3%;
