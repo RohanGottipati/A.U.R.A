@@ -1,0 +1,10 @@
+# Files in the working tree that should NOT be uploaded to Vercel.
+#
+# Why this exists: Vercel enforces a 100 MB per-file limit during deploy. The
+# 188 MB AURA DEMO.mov sometimes lives in /public during local edits, but the
+# real demo is now embedded from YouTube via DemoVideoModal.tsx, so the local
+# copy is redundant and would block every deploy.
+public/AURA DEMO.mov
+
+# Local-only screenshots / scratch artifacts that shouldn't ship.
+public/Screenshot*.png

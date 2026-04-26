@@ -5,18 +5,25 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useModal } from "@/context/ModalContext";
 import { X } from "lucide-react";
 
-// Drop the produced demo video into /public/ (or override via
-// NEXT_PUBLIC_DEMO_VIDEO_URL) and the modal will pick it up automatically.
-const DEMO_VIDEO_URL =
-  process.env.NEXT_PUBLIC_DEMO_VIDEO_URL || "/AURA%20DEMO.mov";
+// Default playback source is the YouTube-hosted demo — keeps the deploy bundle
+// small and lets us update the cut without redeploying. Set
+// NEXT_PUBLIC_DEMO_VIDEO_URL to an absolute MP4/HLS URL to switch back to a
+// self-hosted <video> element (useful for an offline preview build).
+const YOUTUBE_VIDEO_ID = "f_xnGSgf7h4";
+const DEMO_VIDEO_URL = process.env.NEXT_PUBLIC_DEMO_VIDEO_URL || "";
 
 export default function DemoVideoModal() {
   const { open, closeModal } = useModal();
   const videoRef = useRef<HTMLVideoElement>(null);
   const isOpen = open === "demo";
+  const useYouTube = !DEMO_VIDEO_URL;
 
   // Pause + reset playback whenever the modal closes so re-opening starts fresh.
+  // (The YouTube iframe is fully unmounted by Radix Dialog when isOpen flips
+  // false, which already stops playback — this hook only matters for the
+  // self-hosted <video> branch.)
   useEffect(() => {
+    if (useYouTube) return;
     const v = videoRef.current;
     if (!v) return;
     if (!isOpen) {
@@ -32,7 +39,7 @@ export default function DemoVideoModal() {
         /* ignore — user can hit the play control */
       });
     }
-  }, [isOpen]);
+  }, [isOpen, useYouTube]);
 
   return (
     <Dialog open={isOpen} onOpenChange={(v) => !v && closeModal()}>
@@ -58,14 +65,24 @@ export default function DemoVideoModal() {
         </div>
 
         <div className="relative w-full bg-black aspect-video">
-          <video
-            ref={videoRef}
-            src={DEMO_VIDEO_URL}
-            controls
-            playsInline
-            preload="metadata"
-            className="absolute inset-0 w-full h-full object-contain bg-black"
-          />
+          {useYouTube ? (
+            <iframe
+              src={`https://www.youtube-nocookie.com/embed/${YOUTUBE_VIDEO_ID}?autoplay=1&rel=0&modestbranding=1`}
+              title="A.U.R.A product demo"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              className="absolute inset-0 w-full h-full"
+            />
+          ) : (
+            <video
+              ref={videoRef}
+              src={DEMO_VIDEO_URL}
+              controls
+              playsInline
+              preload="metadata"
+              className="absolute inset-0 w-full h-full object-contain bg-black"
+            />
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-white/5 flex items-center justify-between gap-4">
