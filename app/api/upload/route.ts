@@ -4,17 +4,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { runPipeline } from "@/lib/backboard";
 import { db } from "@/lib/db";
-import {
-  isLikelyInfrastructureError,
-  isLocalDevFallbackEnabled,
-  markLocalJobComplete,
-} from "@/lib/local-dev-fallback";
 import { storage } from "@/lib/storage";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 const MIN_USE_CASE_LENGTH = 10;
 const MAX_USE_CASE_LENGTH = 500;
-const INFRA_TIMEOUT_MS = 8000;
 
 function getImageExtension(mimeType: string): string {
   switch (mimeType) {
@@ -29,18 +23,7 @@ function getImageExtension(mimeType: string): string {
   }
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(`${label} timeout after ${timeoutMs}ms`)), timeoutMs);
-    }),
-  ]);
-}
-
 export async function POST(req: NextRequest) {
-  let jobId: string | null = null;
-
   try {
     const formData = await req.formData();
     const file = formData.get("floorplan");
@@ -70,7 +53,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid file type. Use JPG, PNG, or WebP." }, { status: 400 });
     }
 
-    jobId = uuidv4();
+    const jobId = uuidv4();
     const imageKey = `floorplans/${jobId}.${getImageExtension(file.type)}`;
     const imageBuffer = Buffer.from(await file.arrayBuffer());
 
@@ -97,17 +80,9 @@ export async function POST(req: NextRequest) {
       console.warn("Image-hash cache lookup failed, falling through:", err);
     }
 
-    const imageUrl = await withTimeout(
-      storage.uploadImage(imageKey, imageBuffer, file.type),
-      INFRA_TIMEOUT_MS,
-      "Storage upload",
-    );
+    const imageUrl = await storage.uploadImage(imageKey, imageBuffer, file.type);
 
-    await withTimeout(
-      db.createJob(jobId, useCase, imageKey, { imageHash }),
-      INFRA_TIMEOUT_MS,
-      "Database createJob",
-    );
+    await db.createJob(jobId, useCase, imageKey, { imageHash });
 
     // Fire pipeline asynchronously — do NOT await this
     runPipeline(jobId, imageUrl, useCase).catch((err) => {
@@ -118,17 +93,6 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error("Upload error:", error);
-
-    if (jobId && isLocalDevFallbackEnabled() && isLikelyInfrastructureError(error)) {
-      // Keep localhost usable when external infra is unavailable.
-      try {
-        markLocalJobComplete(jobId);
-      } catch (fallbackErr) {
-        console.error("Local fallback write failed:", fallbackErr);
-      }
-      return NextResponse.json({ jobId }, { status: 202 });
-    }
-
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
