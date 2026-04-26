@@ -93,7 +93,7 @@ export function ProblemSection() {
   const cardWidth = isMobile ? "44%" : "17%";
 
   return (
-    <section ref={sectionRef} id="problem" style={{ height: "420vh" }} className="relative">
+    <section ref={sectionRef} id="problem" style={{ height: "calc(2880px + 100vh)" }} className="relative">
       <div
         className="sticky top-0 h-screen overflow-hidden"
         style={{
@@ -544,10 +544,6 @@ export function FinalCTA() {
       <div className="absolute inset-0 grid-bg opacity-50 pointer-events-none" />
       <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 60% 50% at 50% 50%, rgba(0,240,255,0.08) 0%, transparent 70%)" }} />
       <div className="max-w-5xl mx-auto relative z-10 text-center">
-        <div className="tagline mb-6 justify-center inline-flex items-center gap-3">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff] blink" />
-          Limited early access
-        </div>
         <h2 className="font-heading text-4xl sm:text-6xl lg:text-7xl tracking-tight font-medium leading-[1.02]">
           Stop guessing.
           <br />
@@ -557,11 +553,17 @@ export function FinalCTA() {
           Join architects, ops leads and event producers building spaces that work the first time.
         </p>
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <button onClick={() => router.push('/upload')} className="cta-primary px-8 py-4 rounded-md font-mono text-xs tracking-[0.28em] uppercase flex items-center gap-2">
+          <button
+            onClick={() => router.push('/upload')}
+            className="w-full sm:w-auto px-6 py-3 rounded-full bg-[#1a4fd6] text-white font-extrabold text-sm tracking-[-0.01em] transition-all duration-300 hover:bg-[#1d57f0] active:scale-[0.98] flex items-center justify-center gap-2"
+          >
             Generate a Simulation
             <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
-          <a href="#experience" className="cta-secondary px-8 py-4 rounded-md font-mono text-xs tracking-[0.28em] uppercase flex items-center gap-2">
+          <a
+            href="#experience"
+            className="w-full sm:w-auto px-6 py-3 rounded-full bg-[#0a0a0f] text-white/90 font-extrabold text-sm tracking-[-0.01em] border border-white/10 transition-all duration-300 hover:bg-[#111118] hover:border-white/20 active:scale-[0.98] text-center"
+          >
             Replay the simulation
           </a>
         </div>
@@ -666,7 +668,7 @@ export function FeatureStackSection() {
   const transDur = slotSize * 0.38;
 
   return (
-    <section ref={sectionRef} style={{ height: `${N * 350}vh` }} className="relative">
+    <section ref={sectionRef} style={{ height: `calc(11700px + 100vh)` }} className="relative">
       <div className="sticky top-0 h-screen overflow-hidden">
         {FEATURE_SLIDES.map((slide, i) => {
           // ── Entry: card rises from below ───────────────────────────────

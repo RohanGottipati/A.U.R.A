@@ -12,30 +12,26 @@ export default function ProcessingPage() {
     <div className="relative min-h-screen bg-[#050507] text-white overflow-hidden">
       <div className="grain" />
 
-      {/* Ambient backdrop */}
-      <div className="absolute inset-0 grid-bg pointer-events-none opacity-60" />
+      {/* Full-opacity fixed blueprint — matches upload/landing treatment */}
+      <div
+        className="absolute inset-0 pointer-events-none bp-bg"
+      />
+      {/* Minimal dark tint */}
       <div
         className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(ellipse 70% 50% at 50% 20%, rgba(0,240,255,0.10) 0%, transparent 65%)",
-        }}
+        style={{ background: "rgba(4,4,9,0.10)" }}
       />
+      {/* Section-entry bridge */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-[0.10]"
+        className="absolute top-0 left-0 right-0 pointer-events-none"
         style={{
-          backgroundImage: "url('/blueprint-bg.png')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      />
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
+          height: "280px",
           background:
-            "linear-gradient(to bottom, rgba(5,5,7,0.55) 0%, rgba(5,5,7,0.85) 70%, #050507 100%)",
+            "linear-gradient(to bottom, #040409 0%, rgba(4,4,9,0.65) 30%, rgba(4,4,9,0.15) 70%, transparent 100%)",
+          zIndex: 1,
         }}
       />
+      <div className="absolute inset-0 grid-bg-fine pointer-events-none" />
 
       {/* Top status bar */}
       <header className="relative z-10 px-5 md:px-10 pt-6 pb-3">
