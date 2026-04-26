@@ -15,16 +15,74 @@ function getPool(): Pool {
   return pool;
 }
 
+// Detect whether the optional `image_hash` column has been migrated in. The
+// upload route degrades gracefully (skipping caching) if the migration in
+// migrations/003_add_image_hash.sql hasn't been applied yet.
+let imageHashColumnAvailable: boolean | null = null;
+
+async function hasImageHashColumn(): Promise<boolean> {
+  if (imageHashColumnAvailable !== null) return imageHashColumnAvailable;
+  try {
+    const result = await getPool().query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'jobs' AND column_name = 'image_hash' LIMIT 1`,
+    );
+    imageHashColumnAvailable = result.rowCount === 1;
+  } catch {
+    imageHashColumnAvailable = false;
+  }
+  return imageHashColumnAvailable;
+}
+
 export const db = {
   query: (text: string, params?: unknown[]) => getPool().query(text, params),
 
-  async createJob(jobId: string, useCaseText: string, floorplanStorageKey: string): Promise<string> {
+  async createJob(
+    jobId: string,
+    useCaseText: string,
+    floorplanStorageKey: string,
+    options?: { imageHash?: string; status?: string; sceneId?: string },
+  ): Promise<string> {
+    const hashAvailable = await hasImageHashColumn();
+    const useHash = hashAvailable && options?.imageHash;
+    const status = options?.status ?? 'pending';
+    const sceneId = options?.sceneId ?? null;
+
+    if (useHash) {
+      const result = await getPool().query(
+        `INSERT INTO jobs (id, use_case, floorplan_storage_key, image_hash, status, scene_id)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [jobId, useCaseText, floorplanStorageKey, options!.imageHash!, status, sceneId],
+      );
+      return result.rows[0].id;
+    }
+
     const result = await getPool().query(
-      `INSERT INTO jobs (id, use_case, floorplan_storage_key)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [jobId, useCaseText, floorplanStorageKey]
+      `INSERT INTO jobs (id, use_case, floorplan_storage_key, status, scene_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [jobId, useCaseText, floorplanStorageKey, status, sceneId],
     );
     return result.rows[0].id;
+  },
+
+  async findCompletedSceneByHash(
+    imageHash: string,
+    useCase: string,
+  ): Promise<{ sceneId: string } | null> {
+    if (!(await hasImageHashColumn())) return null;
+    const result = await getPool().query(
+      `SELECT j.scene_id AS scene_id
+         FROM jobs j
+        WHERE j.image_hash = $1
+          AND j.use_case = $2
+          AND j.status = 'complete'
+          AND j.scene_id IS NOT NULL
+        ORDER BY j.updated_at DESC
+        LIMIT 1`,
+      [imageHash, useCase],
+    );
+    if (result.rowCount === 0) return null;
+    return { sceneId: result.rows[0].scene_id as string };
   },
 
   async updateJobStatus(

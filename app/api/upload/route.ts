@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -55,9 +56,33 @@ export async function POST(req: NextRequest) {
     const jobId = uuidv4();
     const imageKey = `floorplans/${jobId}.${getImageExtension(file.type)}`;
     const imageBuffer = Buffer.from(await file.arrayBuffer());
+
+    // Content-addressed cache key. Gemini's vision pipeline isn't
+    // deterministic across calls (even at temperature 0), so re-running it
+    // for the same (image, use_case) pair would yield wildly different
+    // scenes. Short-circuit by reusing a previously-completed scene.
+    const imageHash = createHash("sha256").update(imageBuffer).digest("hex");
+
+    try {
+      const cached = await db.findCompletedSceneByHash(imageHash, useCase);
+      if (cached) {
+        // Skip the pipeline. Create a stub job already in `complete` state
+        // pointing at the existing scene so the processing page redirects
+        // immediately.
+        await db.createJob(jobId, useCase, imageKey, {
+          imageHash,
+          status: "complete",
+          sceneId: cached.sceneId,
+        });
+        return NextResponse.json({ jobId }, { status: 202 });
+      }
+    } catch (err) {
+      console.warn("Image-hash cache lookup failed, falling through:", err);
+    }
+
     const imageUrl = await storage.uploadImage(imageKey, imageBuffer, file.type);
 
-    await db.createJob(jobId, useCase, imageKey);
+    await db.createJob(jobId, useCase, imageKey, { imageHash });
 
     // Fire pipeline asynchronously — do NOT await this
     runPipeline(jobId, imageUrl, useCase).catch((err) => {

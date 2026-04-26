@@ -42,7 +42,16 @@ export function isGeminiQuotaError(error: unknown): boolean {
 export async function callGemini(
   prompt: string,
   imageParts?: Part[],
-  options?: { responseMimeType?: "application/json" | "text/plain"; maxOutputTokens?: number },
+  options?: {
+    responseMimeType?: "application/json" | "text/plain";
+    maxOutputTokens?: number;
+    // Allow caller-overridable sampling. Default is fully deterministic so
+    // re-uploading the same image produces the same floor plan instead of a
+    // fresh roll of the dice each time.
+    temperature?: number;
+    topK?: number;
+    topP?: number;
+  },
 ): Promise<string> {
   const parts: Part[] = [{ text: prompt }];
   if (imageParts) parts.unshift(...imageParts);
@@ -50,6 +59,12 @@ export async function callGemini(
   const result = await getModel().generateContent({
     contents: [{ role: "user", parts }],
     generationConfig: {
+      // Deterministic defaults: same input -> same output across runs.
+      // Gemini's default temperature for 2.5-flash is ~1.0 which produced
+      // highly variable extractions for identical floor-plan images.
+      temperature: options?.temperature ?? 0,
+      topK: options?.topK ?? 1,
+      topP: options?.topP ?? 0,
       ...(options?.responseMimeType ? { responseMimeType: options.responseMimeType } : {}),
       ...(options?.maxOutputTokens ? { maxOutputTokens: options.maxOutputTokens } : {}),
     },
