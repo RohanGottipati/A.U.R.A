@@ -12,6 +12,9 @@ interface Props {
   onDelete: (id: string) => void;
   onDeselect: () => void;
   onRecordSnapshot: () => void;
+  isDirty: boolean;
+  isSaving: boolean;
+  onSave: () => void;
 }
 
 const GROUPS: { label: string; defaultOpen: boolean; items: { label: string; type: ObjectType }[] }[] = [
@@ -105,6 +108,9 @@ export default function SceneSidebar({
   onDelete,
   onDeselect,
   onRecordSnapshot,
+  isDirty,
+  isSaving,
+  onSave,
 }: Props) {
   // objects prop is available for future use (e.g. object count display)
   void objects;
@@ -142,6 +148,25 @@ export default function SceneSidebar({
             </div>
           </details>
         ))}
+        {isDirty && (
+          <div style={{ padding: '16px 20px', marginTop: 'auto' }}>
+            <button
+              type="button"
+              className={styles.saveBtn}
+              onClick={onSave}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <>
+                  <span className={styles.saveBtnSpinner} aria-hidden>{'\u25CC'}</span>
+                  <span>SAVING...</span>
+                </>
+              ) : (
+                <>{'\uD83D\uDCBE'} SAVE</>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -220,8 +245,25 @@ export default function SceneSidebar({
 
       <SectionDivider />
 
-      {/* Delete */}
-      <div style={{ padding: '16px 20px', marginTop: 'auto' }}>
+      {/* Save + Delete */}
+      <div style={{ padding: '16px 20px', marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {isDirty && (
+          <button
+            type="button"
+            className={styles.saveBtn}
+            onClick={onSave}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <>
+                <span className={styles.saveBtnSpinner} aria-hidden>{'\u25CC'}</span>
+                <span>SAVING...</span>
+              </>
+            ) : (
+              <>{'\uD83D\uDCBE'} SAVE</>
+            )}
+          </button>
+        )}
         <button type="button" className={styles.deleteBtn} onClick={() => onDelete(obj.id)}>
           DELETE OBJECT
         </button>
