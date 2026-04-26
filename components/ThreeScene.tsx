@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { useEffect, useRef } from 'react';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { Room, SceneFile, SceneObject, Wall } from '@/types/scene';
+import { SceneFile, SceneObject, Wall } from '@/types/scene';
 import { buildObjectMesh } from './objectMeshes';
 
 // The right-side sidebar reserves 280px of horizontal space; the canvas must
