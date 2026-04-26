@@ -40,6 +40,7 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${dmMono.variable} ${syne.variable} antialiased`}
+        suppressHydrationWarning
       >
         {/* Disable browser scroll restoration so the page always starts from the top.
             Otherwise the scroll-driven hero renders mid-animation on the first paint

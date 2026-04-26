@@ -1,12 +1,27 @@
+import dynamic from "next/dynamic";
 import ScrollSimulation from "@/components/landing/ScrollSimulation";
 import {
   ProblemSection,
   FeatureStackSection,
   FinalCTA,
 } from "@/components/landing/Sections";
-import WaitlistModal from "@/components/landing/WaitlistModal";
-import DemoVideoModal from "@/components/landing/DemoVideoModal";
-import GeminiKeyModal from "@/components/landing/GeminiKeyModal";
+
+// Portals (Radix Dialog) render into document.body on the client but inline
+// during SSR, causing a DOM structure mismatch at hydration time.
+// Loading them client-side only avoids the mismatch entirely — they render
+// nothing when closed so there is no visual or SEO trade-off.
+const WaitlistModal = dynamic(
+  () => import("@/components/landing/WaitlistModal"),
+  { ssr: false }
+);
+const DemoVideoModal = dynamic(
+  () => import("@/components/landing/DemoVideoModal"),
+  { ssr: false }
+);
+const GeminiKeyModal = dynamic(
+  () => import("@/components/landing/GeminiKeyModal"),
+  { ssr: false }
+);
 
 export default function Home() {
   return (
