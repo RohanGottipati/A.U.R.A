@@ -1,0 +1,5 @@
+# Force LF endings on shell scripts and Linux config files so they work
+# when copied to the Vultr Ubuntu VPS, even if checked out on Windows.
+*.sh        text eol=lf
+*.conf      text eol=lf
+.env*       text eol=lf
