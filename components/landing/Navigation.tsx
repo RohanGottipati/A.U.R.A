@@ -42,7 +42,7 @@ export default function Navigation() {
           </div>
 
           <button
-            onClick={openModal}
+            onClick={() => openModal("waitlist")}
             className="cta-primary px-4 py-2 rounded-full font-mono text-[10px] tracking-[0.28em] uppercase flex items-center gap-1.5"
           >
             Get access

@@ -1,29 +1,34 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useState } from "react";
+
+export type ModalType = "waitlist" | "demo" | "geminiKey";
 
 interface ModalContextValue {
-  open: boolean;
-  openModal: () => void;
+  open: ModalType | null;
+  openModal: (type?: ModalType) => void;
   closeModal: () => void;
 }
 
 const ModalCtx = createContext<ModalContextValue>({
-  open: false,
+  open: null,
   openModal: () => {},
   closeModal: () => {},
 });
 
 export function ModalProvider({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<ModalType | null>(null);
+
+  const openModal = useCallback((type: ModalType = "waitlist") => {
+    setOpen(type);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setOpen(null);
+  }, []);
+
   return (
-    <ModalCtx.Provider
-      value={{
-        open,
-        openModal: () => setOpen(true),
-        closeModal: () => setOpen(false),
-      }}
-    >
+    <ModalCtx.Provider value={{ open, openModal, closeModal }}>
       {children}
     </ModalCtx.Provider>
   );

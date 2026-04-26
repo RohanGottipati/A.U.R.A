@@ -39,16 +39,21 @@ function formatPipelineError(error: unknown): string {
   return "Processing failed while building the scene. Check the server logs for details.";
 }
 
-export async function runPipeline(jobId: string, floorplanImageUrl: string, useCase: string): Promise<void> {
+export async function runPipeline(
+  jobId: string,
+  floorplanImageUrl: string,
+  useCase: string,
+  apiKey?: string,
+): Promise<void> {
   try {
     // --- Agent 1 ---
     await db.updateJobStatus(jobId, "agent1_running");
-    const floorplan = await runAgent1(floorplanImageUrl);
+    const floorplan = await runAgent1(floorplanImageUrl, apiKey);
     await db.updateJobStatus(jobId, "agent1_done", { agent1Output: floorplan });
 
     // --- Agent 2 ---
     await db.updateJobStatus(jobId, "agent2_running");
-    const { objects, useCaseCategory, placementNotes } = await runAgent2(floorplan, useCase);
+    const { objects, useCaseCategory, placementNotes } = await runAgent2(floorplan, useCase, apiKey);
     await db.updateJobStatus(jobId, "agent2_done", { agent2Output: { objects, useCaseCategory, placementNotes } });
 
     // --- Agent 3 ---

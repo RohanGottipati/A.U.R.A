@@ -66,13 +66,17 @@ CRITICAL: Return ONLY a valid JSON object. No markdown, no explanation, no code 
 // looked nothing like the uploaded image, which made quota / API-key issues
 // impossible to diagnose from the UI. Failing the job with a clear message is
 // strictly better than serving a misleading scene.
-export async function runAgent1(floorplanImageUrl: string): Promise<FloorPlan> {
+export async function runAgent1(
+  floorplanImageUrl: string,
+  apiKey?: string,
+): Promise<FloorPlan> {
   const { buffer, mimeType } = await fetchImageData(floorplanImageUrl);
   const imagePart = imageBufferToPart(buffer, mimeType);
 
   try {
     const rawResponse = await callGemini(AGENT1_PROMPT, [imagePart], {
       responseMimeType: "application/json",
+      apiKey,
     });
     return normalizeFloorPlan(parseGeminiJsonResponse(rawResponse));
   } catch (error) {

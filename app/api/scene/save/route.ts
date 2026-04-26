@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 
 import { db } from "@/lib/db";
+import {
+  DEMO_SCENE_PREFIX,
+  isDemoSceneId,
+  rememberDemoSceneObjects,
+} from "@/lib/demo-scene";
 import { storage } from "@/lib/storage";
 import { normalizeSceneFile } from "@/lib/scene-validation";
 import { SceneFile, SceneObject } from "@/types/scene";
@@ -18,6 +23,15 @@ export async function POST(req: NextRequest) {
 
     if (!originalSceneId || !Array.isArray(objects)) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+
+    // Demo scenes never touched the DB or object storage, so there's nothing
+    // to fork from. Return a fresh demo sceneId so the client's "saved" UI
+    // path keeps working without persistence.
+    if (isDemoSceneId(originalSceneId)) {
+      const newSceneId = `${DEMO_SCENE_PREFIX}${Date.now()}`;
+      rememberDemoSceneObjects(newSceneId, objects);
+      return NextResponse.json({ newSceneId, shareUrl: null });
     }
 
     const originalScene = await db.getScene(originalSceneId);

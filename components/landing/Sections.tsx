@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   ArrowUpRight, Boxes, Activity, AlertTriangle,
-  GitBranch, Layers, Zap, LineChart,
+  GitBranch, Layers, Zap, LineChart, Play,
 } from "lucide-react";
+import { useModal } from "@/context/ModalContext";
 
 // Desktop: 5-per-row × 2 rows
 const DESKTOP_CARDS = [
@@ -538,7 +538,7 @@ function Node({ stage, title, sub, icon, highlight }: { stage: string; title: st
 
 
 export function FinalCTA() {
-  const router = useRouter();
+  const { openModal } = useModal();
   return (
     <section className="relative py-32 md:py-52 px-5 md:px-10 overflow-hidden">
       <div className="absolute inset-0 grid-bg opacity-50 pointer-events-none" />
@@ -554,18 +554,20 @@ export function FinalCTA() {
         </p>
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
           <button
-            onClick={() => router.push('/upload')}
+            onClick={() => openModal("geminiKey")}
             className="w-full sm:w-auto px-6 py-3 rounded-full bg-[#1a4fd6] text-white font-extrabold text-sm tracking-[-0.01em] transition-all duration-300 hover:bg-[#1d57f0] active:scale-[0.98] flex items-center justify-center gap-2"
           >
-            Generate a Simulation
+            Try with your API key
             <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
-          <a
-            href="#experience"
-            className="w-full sm:w-auto px-6 py-3 rounded-full bg-[#0a0a0f] text-white/90 font-extrabold text-sm tracking-[-0.01em] border border-white/10 transition-all duration-300 hover:bg-[#111118] hover:border-white/20 active:scale-[0.98] text-center"
+          <button
+            type="button"
+            onClick={() => openModal("demo")}
+            className="w-full sm:w-auto px-6 py-3 rounded-full bg-[#0a0a0f] text-white/90 font-extrabold text-sm tracking-[-0.01em] border border-white/10 transition-all duration-300 hover:bg-[#111118] hover:border-white/20 active:scale-[0.98] flex items-center justify-center gap-2"
           >
-            Replay the simulation
-          </a>
+            <Play className="w-3.5 h-3.5" />
+            Watch demo
+          </button>
         </div>
       </div>
     </section>

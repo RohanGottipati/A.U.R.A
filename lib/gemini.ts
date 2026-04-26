@@ -2,19 +2,27 @@ import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 
 import { getEnv } from "./env";
 
-let genai: GoogleGenerativeAI | null = null;
+let defaultGenai: GoogleGenerativeAI | null = null;
 
-function getModel() {
-  if (!genai) {
-    genai = new GoogleGenerativeAI(getEnv().GEMINI_API_KEY);
-  }
-
+function resolveModelName(): string {
   // gemini-2.5-flash is the current production-ready vision-capable model on the
   // free tier. The implementation.MD spec mentions gemini-2.0-flash but Google
   // has retired that endpoint for new free-tier projects (returns 0 quota).
-  const modelName = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  return process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+}
 
-  return genai.getGenerativeModel({ model: modelName });
+function getModel(apiKeyOverride?: string) {
+  if (apiKeyOverride && apiKeyOverride.trim()) {
+    // User-supplied keys must NOT be cached: different requests can carry
+    // different keys, so we build a fresh client per call.
+    const client = new GoogleGenerativeAI(apiKeyOverride.trim());
+    return client.getGenerativeModel({ model: resolveModelName() });
+  }
+
+  if (!defaultGenai) {
+    defaultGenai = new GoogleGenerativeAI(getEnv().GEMINI_API_KEY);
+  }
+  return defaultGenai.getGenerativeModel({ model: resolveModelName() });
 }
 
 export async function fetchImageData(url: string): Promise<{ buffer: Buffer; mimeType: string }> {
@@ -51,12 +59,15 @@ export async function callGemini(
     temperature?: number;
     topK?: number;
     topP?: number;
+    // Optional per-request API key. When supplied, used in place of the
+    // server-side GEMINI_API_KEY env var (allows BYOK from the UI).
+    apiKey?: string;
   },
 ): Promise<string> {
   const parts: Part[] = [{ text: prompt }];
   if (imageParts) parts.unshift(...imageParts);
 
-  const result = await getModel().generateContent({
+  const result = await getModel(options?.apiKey).generateContent({
     contents: [{ role: "user", parts }],
     generationConfig: {
       // Deterministic defaults: same input -> same output across runs.

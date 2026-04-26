@@ -7,6 +7,7 @@ import { ArrowRight, Check, X } from "lucide-react";
 
 export default function WaitlistModal() {
   const { open, closeModal } = useModal();
+  const isOpen = open === "waitlist";
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -24,7 +25,7 @@ export default function WaitlistModal() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && closeModal()}>
+    <Dialog open={isOpen} onOpenChange={(v) => !v && closeModal()}>
       <DialogContent
         className="bg-[#0a0a0f] border border-[#1a1a26] text-white max-w-md p-0 overflow-hidden"
       >

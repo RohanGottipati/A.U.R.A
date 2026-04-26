@@ -5,6 +5,8 @@ import {
   FinalCTA,
 } from "@/components/landing/Sections";
 import WaitlistModal from "@/components/landing/WaitlistModal";
+import DemoVideoModal from "@/components/landing/DemoVideoModal";
+import GeminiKeyModal from "@/components/landing/GeminiKeyModal";
 
 export default function Home() {
   return (
@@ -52,6 +54,8 @@ export default function Home() {
         </div>
       </main>
       <WaitlistModal />
+      <DemoVideoModal />
+      <GeminiKeyModal />
     </div>
   );
 }

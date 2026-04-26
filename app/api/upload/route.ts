@@ -4,6 +4,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { runPipeline } from "@/lib/backboard";
 import { db } from "@/lib/db";
+import {
+  DEMO_FLOORPLAN_FILENAME,
+  DEMO_JOB_PREFIX,
+  rememberDemoUseCase,
+} from "@/lib/demo-scene";
 import { storage } from "@/lib/storage";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -30,6 +35,14 @@ export async function POST(req: NextRequest) {
     const useCaseValue = formData.get("useCase");
     const useCase = typeof useCaseValue === "string" ? useCaseValue.trim() : "";
 
+    // Optional bring-your-own-key. Sent by the upload form when the user has
+    // saved a Gemini API key in the landing-page modal. Header takes
+    // precedence over a form-data field; both are scrubbed before logging.
+    const headerKey = req.headers.get("x-gemini-api-key")?.trim() ?? "";
+    const formKeyValue = formData.get("geminiApiKey");
+    const formKey = typeof formKeyValue === "string" ? formKeyValue.trim() : "";
+    const userApiKey = headerKey || formKey || undefined;
+
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "No floor plan image provided" }, { status: 400 });
     }
@@ -51,6 +64,18 @@ export async function POST(req: NextRequest) {
 
     if (!ALLOWED_MIME_TYPES.includes(file.type as (typeof ALLOWED_MIME_TYPES)[number])) {
       return NextResponse.json({ error: "Invalid file type. Use JPG, PNG, or WebP." }, { status: 400 });
+    }
+
+    // ── Hardcoded demo flow ─────────────────────────────────────────────
+    // When the user uploads the bundled `Test.webp` asset we skip the real
+    // pipeline (and any DB / storage / Gemini calls) and hand back a synthetic
+    // job id whose timestamp drives a quick, scripted "loading" sequence
+    // ending in a pre-baked 3D scene. The supplied API key is intentionally
+    // ignored. See lib/demo-scene.ts.
+    if (file.name === DEMO_FLOORPLAN_FILENAME) {
+      const demoJobId = `${DEMO_JOB_PREFIX}${Date.now()}`;
+      rememberDemoUseCase(demoJobId, useCase);
+      return NextResponse.json({ jobId: demoJobId }, { status: 202 });
     }
 
     const jobId = uuidv4();
@@ -85,7 +110,7 @@ export async function POST(req: NextRequest) {
     await db.createJob(jobId, useCase, imageKey, { imageHash });
 
     // Fire pipeline asynchronously — do NOT await this
-    runPipeline(jobId, imageUrl, useCase).catch((err) => {
+    runPipeline(jobId, imageUrl, useCase, userApiKey).catch((err) => {
       console.error(`Pipeline failed for job ${jobId}:`, err);
     });
 

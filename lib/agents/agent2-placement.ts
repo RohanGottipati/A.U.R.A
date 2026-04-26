@@ -143,10 +143,15 @@ async function runAgent2ViaBackboard(prompt: string, floorplan: FloorPlan): Prom
   return normalizeAgent2Output(parseGeminiJsonResponse(rawResponse), floorplan);
 }
 
-async function runAgent2ViaGeminiDirect(prompt: string, floorplan: FloorPlan): Promise<Agent2Result> {
+async function runAgent2ViaGeminiDirect(
+  prompt: string,
+  floorplan: FloorPlan,
+  apiKey?: string,
+): Promise<Agent2Result> {
   const rawResponse = await callGemini(prompt, undefined, {
     responseMimeType: "application/json",
     maxOutputTokens: 8192,
+    apiKey,
   });
   return normalizeAgent2Output(parseGeminiJsonResponse(rawResponse), floorplan);
 }
@@ -154,8 +159,24 @@ async function runAgent2ViaGeminiDirect(prompt: string, floorplan: FloorPlan): P
 export async function runAgent2(
   floorplan: FloorPlan,
   useCase: string,
+  apiKey?: string,
 ): Promise<Agent2Result> {
   const prompt = buildAgent2Prompt(floorplan, useCase);
+
+  // When the caller supplies their own Gemini key we skip Backboard (which uses
+  // the server's API key) and go straight to direct Gemini so the user's
+  // quota/credentials are actually exercised end-to-end.
+  if (apiKey && apiKey.trim()) {
+    try {
+      return await runAgent2ViaGeminiDirect(prompt, floorplan, apiKey);
+    } catch (geminiError) {
+      if (isGeminiServiceError(geminiError)) {
+        console.warn("BYOK Gemini agent 2 failed, using rule-based fallback:", geminiError);
+        return buildFallbackPlacement(floorplan, useCase);
+      }
+      throw geminiError;
+    }
+  }
 
   try {
     return await runAgent2ViaBackboard(prompt, floorplan);

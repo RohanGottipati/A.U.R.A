@@ -72,7 +72,22 @@ export default function UploadForm() {
       formData.append('floorplan', selectedFile);
       formData.append('useCase', useCaseText);
 
-      const response = await fetch('/api/upload', { method: 'POST', body: formData });
+      // BYOK: forward any user-supplied Gemini API key saved by the landing
+      // page modal. Sent as both a header (preferred) and a form field
+      // (defensive — survives multipart proxies that strip headers).
+      let userApiKey = '';
+      try {
+        userApiKey = localStorage.getItem('aura_gemini_api_key')?.trim() ?? '';
+      } catch {
+        /* localStorage unavailable */
+      }
+      if (userApiKey) formData.append('geminiApiKey', userApiKey);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+        headers: userApiKey ? { 'x-gemini-api-key': userApiKey } : undefined,
+      });
       const data = await response.json();
 
       if (!response.ok) {

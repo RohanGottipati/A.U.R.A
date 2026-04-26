@@ -489,6 +489,63 @@ export default function ThreeScene({
     const velocity = new THREE.Vector3();
     const target = new THREE.Vector3();
 
+    // Pre-flatten wall segments for cheap circle-vs-segment collision in
+    // walk mode. Only walls whose height clears the camera's eye level
+    // (1.7 m) need to block movement; tiny half-walls / partitions don't.
+    type Segment = {
+      ax: number;
+      az: number;
+      dx: number;
+      dz: number;
+      lenSq: number;
+    };
+    const COLLIDE_HEIGHT = 1.0;
+    const collisionSegments: Segment[] = sceneData.floorplan.walls
+      .filter((w) => w.height >= COLLIDE_HEIGHT)
+      .map((w) => {
+        const dx = w.x2 - w.x1;
+        const dz = w.y2 - w.y1;
+        return {
+          ax: w.x1,
+          az: w.y1,
+          dx,
+          dz,
+          lenSq: dx * dx + dz * dz,
+        };
+      })
+      .filter((s) => s.lenSq > 1e-6);
+
+    const CAM_RADIUS = 0.35; // body radius (m)
+    const WALL_HALF_THICK = 0.09; // walls are 0.18m thick, half-thickness
+    const MIN_DIST = CAM_RADIUS + WALL_HALF_THICK;
+    const MIN_DIST_SQ = MIN_DIST * MIN_DIST;
+
+    // Push the camera out of any wall it has clipped into. Run a couple of
+    // passes so corners (where two walls overlap) resolve smoothly.
+    const resolveWallCollisions = (cam: THREE.Vector3) => {
+      for (let pass = 0; pass < 2; pass++) {
+        let pushed = false;
+        for (const s of collisionSegments) {
+          let t = ((cam.x - s.ax) * s.dx + (cam.z - s.az) * s.dz) / s.lenSq;
+          if (t < 0) t = 0;
+          else if (t > 1) t = 1;
+          const closestX = s.ax + t * s.dx;
+          const closestZ = s.az + t * s.dz;
+          const distX = cam.x - closestX;
+          const distZ = cam.z - closestZ;
+          const distSq = distX * distX + distZ * distZ;
+          if (distSq < MIN_DIST_SQ && distSq > 1e-9) {
+            const dist = Math.sqrt(distSq);
+            const push = (MIN_DIST - dist) / dist;
+            cam.x += distX * push;
+            cam.z += distZ * push;
+            pushed = true;
+          }
+        }
+        if (!pushed) break;
+      }
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       keys[e.code] = true;
       if (modeRef.current === 'walk') e.preventDefault();
@@ -725,6 +782,11 @@ export default function ThreeScene({
       const pad = 0.45;
       camera.position.x = Math.max(pad, Math.min(fpw - pad, camera.position.x));
       camera.position.z = Math.max(pad, Math.min(fpd - pad, camera.position.z));
+
+      // Slide along walls — keeps the body out of solid geometry without
+      // hard-stopping movement. The pushes are applied directly to the
+      // camera position so we get free "slide along wall" motion.
+      resolveWallCollisions(camera.position);
 
       camera.rotation.order = 'YXZ';
       camera.rotation.y = yawRef.current;

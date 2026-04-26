@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { getDemoJobStatus, isDemoJobId } from "@/lib/demo-scene";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Preparing your floor plan...",
@@ -26,6 +27,13 @@ const STATUS_PROGRESS: Record<string, number> = {
 
 export async function GET(_req: NextRequest, { params }: { params: { jobId: string } }) {
   try {
+    // Demo / hardcoded flow: synthesize the response from a fixed timeline,
+    // never touching the DB. See lib/demo-scene.ts.
+    if (isDemoJobId(params.jobId)) {
+      const status = getDemoJobStatus(params.jobId);
+      if (status) return NextResponse.json(status);
+    }
+
     const job = await db.getJob(params.jobId);
 
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
