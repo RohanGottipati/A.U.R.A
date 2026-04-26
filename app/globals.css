@@ -1,21 +1,234 @@
+@import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800,900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@300;400;500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
-  --accent: #d46b2f;
+  --bg: #050507;
+  --bg-2: #0a0a0f;
+  --surface: #0d0d13;
+  --surface-2: #11111a;
+  --border-color: #1a1a26;
+  --border-2: #242436;
+  --text: #ffffff;
+  --text-dim: #8a8a99;
+  --text-muted: #5a5a6e;
+  --cyan: #00f0ff;
+  --blue: #0a84ff;
+  --red: #ff3b30;
+  --green: #00ffaa;
+  --amber: #ffb020;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-geist-sans), sans-serif;
+  overflow-x: hidden;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+::selection {
+  background: rgba(0, 240, 255, 0.25);
+  color: #ffffff;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+.font-heading {
+  font-family: "Manrope", sans-serif;
+  letter-spacing: -0.025em;
+  font-feature-settings: "cv01" on, "cv02" on;
+}
+
+.font-mono-custom {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.tagline {
+  font-family: "JetBrains Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 11px;
+  color: var(--cyan);
+}
+
+.grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+.grid-bg-fine {
+  background-image:
+    linear-gradient(to right, rgba(0,240,255,0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,240,255,0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.glass {
+  background: rgba(13, 13, 19, 0.55);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glow-cyan {
+  box-shadow:
+    0 0 0 1px rgba(0, 240, 255, 0.4),
+    0 0 24px rgba(0, 240, 255, 0.2),
+    0 0 64px rgba(0, 240, 255, 0.08);
+}
+
+.text-glow {
+  text-shadow: 0 0 16px rgba(0, 240, 255, 0.35);
+}
+
+.hairline {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08) 20%, rgba(255,255,255,0.08) 80%, transparent);
+}
+
+@keyframes draw { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.pulse-soft {
+  animation: pulse-soft 2.4s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.blink {
+  animation: blink 1.1s steps(2, end) infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.cta-primary {
+  position: relative;
+  background: linear-gradient(180deg, #0d141a 0%, #050507 100%);
+  color: #d6fcff;
+  border: 1px solid rgba(0, 240, 255, 0.45);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cta-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 0 rgba(0, 240, 255, 0);
+  transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.cta-primary:hover {
+  border-color: rgba(0, 240, 255, 0.95);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.cta-primary:hover::after {
+  box-shadow:
+    0 0 0 1px rgba(0, 240, 255, 0.4),
+    0 12px 40px -8px rgba(0, 240, 255, 0.45),
+    0 0 80px -10px rgba(0, 240, 255, 0.4);
+}
+
+.cta-secondary {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cta-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dotted-sep {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1px);
+  background-size: 8px 8px;
+  background-repeat: repeat-x;
+  background-position: center;
+  height: 1px;
+}
+
+@layer base {
+  :root {
+    --background: 240 6% 3%;
+    --foreground: 0 0% 100%;
+    --card: 240 7% 6%;
+    --card-foreground: 0 0% 100%;
+    --popover: 240 7% 6%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 187 100% 50%;
+    --primary-foreground: 240 6% 3%;
+    --secondary: 240 5% 10%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 5% 10%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 187 100% 50%;
+    --accent-foreground: 240 6% 3%;
+    --destructive: 0 85% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 8% 14%;
+    --input: 240 8% 14%;
+    --ring: 187 100% 50%;
+    --radius: 0.5rem;
   }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
 }

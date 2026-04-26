@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { DM_Mono, Syne } from "next/font/google";
 import "./globals.css";
+import { ModalProvider } from "@/context/ModalContext";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -25,8 +26,9 @@ const syne = Syne({
 });
 
 export const metadata: Metadata = {
-  title: "FloorPlan AI",
-  description: "Upload any floor plan. Configure any space. In seconds.",
+  title: "A.U.R.A — Spatial Simulation Infrastructure",
+  description:
+    "Turn static floor plans into living 3D environments you can walk through, test, and stress — before a single thing is built.",
 };
 
 export default function RootLayout({
@@ -39,7 +41,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${dmMono.variable} ${syne.variable} antialiased`}
       >
-        {children}
+        <ModalProvider>{children}</ModalProvider>
       </body>
     </html>
   );
