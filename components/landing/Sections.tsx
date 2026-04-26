@@ -582,24 +582,28 @@ const FEATURE_SLIDES = [
     accent: "3D environments.",
     body: "Instantly convert floor plans into fully explorable 3D spaces.",
     tags: ["Visualization", "Design Reviews", "Planning"],
+    video: "/screen1.mov",
   },
   {
     title: "Automatically organize and size",
     accent: "your layout.",
     body: "Intelligently structure rooms, components, and proportions from raw plans.",
     tags: ["Layout Structuring", "Space Planning", "Accuracy"],
+    video: "/vid2.mp4",
   },
   {
     title: "Explore your space with",
     accent: "real-time navigation.",
     body: "Walk through or orbit your environment to understand scale and flow.",
     tags: ["Walkthroughs", "Reviews", "Spatial Understanding"],
+    video: "/vid3.mov",
   },
   {
     title: "Collaborate and share",
     accent: "spaces instantly.",
     body: "Send interactive 3D environments to teammates or stakeholders in seconds.",
     tags: ["Teams", "Clients", "Approvals"],
+    video: "/vid4.mp4",
   },
 ];
 
@@ -768,15 +772,17 @@ export function FeatureStackSection() {
                     <span className="w-3 h-3 rounded-full bg-[#28c940]" />
                   </div>
                   <div
-                    className="w-full flex items-center justify-center"
-                    style={{
-                      aspectRatio: "16/9",
-                      background: "linear-gradient(160deg, #1e1e25 0%, #26262e 100%)",
-                    }}
+                    className="w-full"
+                    style={{ aspectRatio: "16/9", background: "#0d0d10" }}
                   >
-                    <span className="font-mono text-[10px] tracking-[0.35em] uppercase text-white/18">
-                      Video placeholder
-                    </span>
+                    <video
+                      src={slide.video}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 </div>
               </div>

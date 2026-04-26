@@ -5,10 +5,10 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useModal } from "@/context/ModalContext";
 import { X } from "lucide-react";
 
-// Drop the produced demo video into /public/demo.mp4 (or override via
+// Drop the produced demo video into /public/ (or override via
 // NEXT_PUBLIC_DEMO_VIDEO_URL) and the modal will pick it up automatically.
 const DEMO_VIDEO_URL =
-  process.env.NEXT_PUBLIC_DEMO_VIDEO_URL || "/demo.mp4";
+  process.env.NEXT_PUBLIC_DEMO_VIDEO_URL || "/AURA%20DEMO.mov";
 
 export default function DemoVideoModal() {
   const { open, closeModal } = useModal();
