@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useScrollProgress, smoothstep } from "@/hooks/useScrollProgress";
@@ -25,6 +25,16 @@ export default function ScrollSimulation() {
   const [progress, progressRef] = useScrollProgress(sectionRef);
   const { openModal } = useModal();
   const router = useRouter();
+
+  // Delay hero entrance animations until the splash screen is fully gone (3700ms).
+  // On cached loads, React hydrates near-instantly, so without this gate Framer
+  // Motion completes its transitions while the splash is still blocking the view.
+  const SPLASH_GONE_MS = 3700;
+  const [splashDone, setSplashDone] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setSplashDone(true), SPLASH_GONE_MS + 100);
+    return () => clearTimeout(id);
+  }, []);
 
   const v0Ref = useRef<HTMLVideoElement>(null);
   const v1Ref = useRef<HTMLVideoElement>(null);
@@ -207,7 +217,7 @@ export default function ScrollSimulation() {
             <div className="w-full">
               <motion.h1
                 initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
+                animate={splashDone ? { opacity: 1, y: 0 } : { opacity: 0, y: 18 }}
                 transition={{ duration: 1.1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
                 className="font-heading text-[32px] sm:text-6xl lg:text-[80px] leading-[1.0] tracking-[-0.04em] font-extrabold text-white text-center"
               >
@@ -216,7 +226,7 @@ export default function ScrollSimulation() {
 
               <motion.p
                 initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
+                animate={splashDone ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
                 transition={{ duration: 0.9, delay: 0.55, ease: [0.16, 1, 0.3, 1] }}
                 className="mt-5 sm:mt-8 mx-auto max-w-2xl text-base sm:text-xl md:text-2xl text-white/75 leading-relaxed font-bold tracking-[-0.01em]"
               >
@@ -225,7 +235,7 @@ export default function ScrollSimulation() {
 
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
+                animate={splashDone ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
                 transition={{ duration: 0.9, delay: 0.7, ease: [0.16, 1, 0.3, 1] }}
                 className="mt-7 sm:mt-9 flex flex-col sm:flex-row items-center justify-center gap-3 pointer-events-auto"
               >
