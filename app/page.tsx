@@ -5,12 +5,10 @@ import {
   FinalCTA,
 } from "@/components/landing/Sections";
 import WaitlistModal from "@/components/landing/WaitlistModal";
-import SplashScreen from "@/components/landing/SplashScreen";
 
 export default function Home() {
   return (
     <div className="relative bg-[#050507] text-white">
-      <SplashScreen />
       <div className="grain" />
       <main>
         <ScrollSimulation />
