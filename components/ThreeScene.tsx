@@ -320,6 +320,7 @@ export default function ThreeScene({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const meshMap = useRef<Map<string, THREE.Group>>(new Map());
   const selectedHelper = useRef<THREE.BoxHelper | null>(null);
+  const selectedHelperId = useRef<string | null>(null);
   const isDragging = useRef(false);
   const dragObjectId = useRef<string | null>(null);
   const floorPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0));
@@ -808,6 +809,16 @@ export default function ThreeScene({
         };
       }
 
+      // Keep the selection box in sync with the (potentially moving) target
+      // so dragging an object doesn't require recreating the helper, which
+      // would visibly flicker every frame.
+      if (selectedHelper.current && selectedHelperId.current) {
+        const tracked = meshMap.current.get(selectedHelperId.current);
+        if (tracked) {
+          (selectedHelper.current as THREE.BoxHelper).setFromObject(tracked);
+        }
+      }
+
       renderer.render(scene, camera);
     }
     animate();
@@ -901,6 +912,14 @@ export default function ThreeScene({
           }
         });
         meshMap.current.delete(id);
+        // If the deleted object was selected, drop the helper too so the
+        // animate loop doesn't try to read from a disposed group.
+        if (selectedHelperId.current === id && selectedHelper.current) {
+          scene.remove(selectedHelper.current);
+          (selectedHelper.current as THREE.BoxHelper).geometry.dispose();
+          selectedHelper.current = null;
+          selectedHelperId.current = null;
+        }
       }
     });
 
@@ -920,6 +939,11 @@ export default function ThreeScene({
           newGroup.userData.objSize = { w: obj.width, d: obj.depth, h: obj.height };
           scene.add(newGroup);
           meshMap.current.set(obj.id, newGroup);
+          // If this rebuilt object is currently selected, repoint the helper
+          // at the fresh group so the box doesn't track a disposed mesh.
+          if (selectedHelperId.current === obj.id && selectedHelper.current) {
+            (selectedHelper.current as THREE.BoxHelper).setFromObject(newGroup);
+          }
         } else {
           // Just update transform (buildObjectMesh sets position from obj.x/y)
           group.position.set(obj.x, 0, obj.y);
@@ -937,24 +961,46 @@ export default function ThreeScene({
   }, [objects]);
 
   /* ---------------- Selection highlight ---------------- */
+  // Only react to selection-id changes here. The helper itself is kept in
+  // sync with the object's transform every frame from the animate loop, so
+  // we never need to recreate it on `objects` updates (which used to cause
+  // a visible flicker every time the user dragged an object).
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
 
-    if (selectedHelper.current) {
-      scene.remove(selectedHelper.current);
-      selectedHelper.current = null;
+    // Selection cleared
+    if (!selectedId) {
+      if (selectedHelper.current) {
+        scene.remove(selectedHelper.current);
+        (selectedHelper.current as THREE.BoxHelper).geometry.dispose();
+        selectedHelper.current = null;
+        selectedHelperId.current = null;
+      }
+      return;
     }
 
-    if (selectedId) {
-      const group = meshMap.current.get(selectedId);
-      if (group) {
-        const helper = new THREE.BoxHelper(group, 0x00d4ff);
-        scene.add(helper);
-        selectedHelper.current = helper;
-      }
+    // Selection unchanged — leave the helper alone
+    if (selectedHelperId.current === selectedId && selectedHelper.current) {
+      return;
     }
-  }, [selectedId, objects]);
+
+    // Selection changed — swap helper to the new target
+    if (selectedHelper.current) {
+      scene.remove(selectedHelper.current);
+      (selectedHelper.current as THREE.BoxHelper).geometry.dispose();
+      selectedHelper.current = null;
+      selectedHelperId.current = null;
+    }
+
+    const group = meshMap.current.get(selectedId);
+    if (group) {
+      const helper = new THREE.BoxHelper(group, 0x00d4ff);
+      scene.add(helper);
+      selectedHelper.current = helper;
+      selectedHelperId.current = selectedId;
+    }
+  }, [selectedId]);
 
   return (
     <div ref={containerRef} className="relative w-full h-full">

@@ -27,6 +27,11 @@ export interface SendMessageOptions {
   modelName?: string;
   jsonOutput?: boolean;
   memory?: "Auto" | "Readonly" | "off";
+  // Sampling overrides. Default to deterministic so re-running the same
+  // floor plan + use case produces the same scene each time.
+  temperature?: number;
+  topK?: number;
+  topP?: number;
   attachment?: {
     filename: string;
     buffer: Buffer;
@@ -104,6 +109,11 @@ export async function sendMessage(
   const env = getEnv();
   const llmProvider = options.llmProvider ?? env.BACKBOARD_LLM_PROVIDER;
   const modelName = options.modelName ?? env.BACKBOARD_MODEL_NAME;
+  // Default to fully deterministic sampling so identical inputs produce
+  // identical placements between runs.
+  const temperature = options.temperature ?? 0;
+  const topK = options.topK ?? 1;
+  const topP = options.topP ?? 0;
 
   let response: Response;
 
@@ -114,6 +124,9 @@ export async function sendMessage(
     formData.set("model_name", modelName);
     formData.set("stream", "false");
     formData.set("memory", options.memory ?? "off");
+    formData.set("temperature", String(temperature));
+    formData.set("top_k", String(topK));
+    formData.set("top_p", String(topP));
     if (options.jsonOutput) {
       formData.set("json_output", "true");
     }
@@ -137,6 +150,9 @@ export async function sendMessage(
         stream: false,
         memory: options.memory ?? "off",
         json_output: Boolean(options.jsonOutput),
+        temperature,
+        top_k: topK,
+        top_p: topP,
       }),
     });
   }
