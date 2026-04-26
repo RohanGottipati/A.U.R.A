@@ -6,7 +6,6 @@ import {
   ArrowUpRight, Boxes, Activity, AlertTriangle,
   GitBranch, Layers, Zap, LineChart,
 } from "lucide-react";
-import { useModal } from "@/context/ModalContext";
 
 // Desktop: 5-per-row × 2 rows
 const DESKTOP_CARDS = [
@@ -539,7 +538,6 @@ function Node({ stage, title, sub, icon, highlight }: { stage: string; title: st
 
 
 export function FinalCTA() {
-  const { openModal } = useModal();
   const router = useRouter();
   return (
     <section className="relative py-32 md:py-52 px-5 md:px-10 overflow-hidden">

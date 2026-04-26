@@ -4,7 +4,6 @@ import { useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useScrollProgress, smoothstep } from "@/hooks/useScrollProgress";
-import { useModal } from "@/context/ModalContext";
 
 const VIDEO_CLIPS = [
   { src: "https://customer-assets.emergentagent.com/job_flow-alive/artifacts/syhkm5s8_Video_UI_Animation_Desk_to_Blueprint.mp4", start: 0.00, end: 0.33, scrubStartSec: 0, scrubEndSec: undefined as number | undefined },
@@ -22,8 +21,7 @@ function clipOpacity(p: number, idx: number) {
 
 export default function ScrollSimulation() {
   const sectionRef = useRef<HTMLElement>(null);
-  const [progress, progressRef] = useScrollProgress(sectionRef);
-  const { openModal } = useModal();
+  const [, progressRef] = useScrollProgress(sectionRef);
   const router = useRouter();
 
   const v0Ref = useRef<HTMLVideoElement>(null);
