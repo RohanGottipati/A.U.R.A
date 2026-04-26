@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
-import { getLocalDemoScene, isLocalDevFallbackEnabled, isLocalSceneId } from "@/lib/local-dev-fallback";
 import { normalizeSceneFile } from "@/lib/scene-validation";
 import { storage } from "@/lib/storage";
 
 export async function GET(_req: NextRequest, { params }: { params: { sceneId: string } }) {
   try {
-    if (isLocalDevFallbackEnabled() && isLocalSceneId(params.sceneId)) {
-      return NextResponse.json(normalizeSceneFile(getLocalDemoScene()));
-    }
-
     const scene = await db.getScene(params.sceneId);
     if (!scene) return NextResponse.json({ error: "Scene not found" }, { status: 404 });
 

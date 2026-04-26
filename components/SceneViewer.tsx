@@ -311,6 +311,9 @@ export default function SceneViewer({ sceneData }: Props) {
         onDelete={deleteObject}
         onDeselect={() => setSelectedId(null)}
         onRecordSnapshot={recordSnapshot}
+        isDirty={isDirty}
+        isSaving={isSaving}
+        onSave={handleSave}
       />
 
       {/* ============== Top-left: Scene Info ============== */}
@@ -396,6 +399,7 @@ export default function SceneViewer({ sceneData }: Props) {
           <span className={styles.btnIcon}>+</span>
           <span>NEW SCENE</span>
         </a>
+
       </div>
 
       {/* ============== Bottom-center: Walk-mode Hints ============== */}
@@ -481,30 +485,6 @@ export default function SceneViewer({ sceneData }: Props) {
         {saveToast ?? ''}
       </div>
 
-      {/* ============== Bottom-center: Save & Share ============== */}
-      <div
-        className={`${styles.saveBtnWrap} ${
-          isDirty ? styles.saveBtnVisible : styles.saveBtnHidden
-        }`}
-      >
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className={styles.saveBtn}
-        >
-          {isSaving ? (
-            <>
-              <span className={styles.saveBtnSpinner} aria-hidden>
-                {'\u25CC'}
-              </span>
-              <span>{'  SAVING...'}</span>
-            </>
-          ) : (
-            <span>{'\uD83D\uDCBE  SAVE'}</span>
-          )}
-        </button>
-      </div>
     </div>
   );
 }
