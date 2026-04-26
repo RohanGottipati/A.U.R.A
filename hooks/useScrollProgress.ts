@@ -44,6 +44,30 @@ export function useScrollProgress(
     setProgress(targetRef.current);
     lastEmittedRef.current = targetRef.current;
 
+    // Re-measure after layout-affecting events (fonts loading, images, late hydration).
+    // Without this, the first paint can use stale measurements and the page renders
+    // in a broken state until a manual reload triggers a fresh layout pass.
+    const remeasure = () => {
+      measure();
+      targetRef.current = computeTarget();
+    };
+    const remeasureTimers: number[] = [];
+    remeasureTimers.push(window.setTimeout(remeasure, 0));
+    remeasureTimers.push(window.setTimeout(remeasure, 100));
+    remeasureTimers.push(window.setTimeout(remeasure, 400));
+    remeasureTimers.push(window.setTimeout(remeasure, 1200));
+    window.addEventListener("load", remeasure);
+    if (typeof document !== "undefined" && (document as Document & { fonts?: { ready?: Promise<unknown> } }).fonts) {
+      const fonts = (document as Document & { fonts: { ready?: Promise<unknown> } }).fonts;
+      fonts.ready?.then(remeasure).catch(() => {});
+    }
+    let ro: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== "undefined" && ref.current) {
+      ro = new ResizeObserver(remeasure);
+      ro.observe(ref.current);
+      ro.observe(document.documentElement);
+    }
+
     if (!smooth) {
       const update = () => {
         targetRef.current = computeTarget();
@@ -55,6 +79,9 @@ export function useScrollProgress(
       return () => {
         window.removeEventListener("scroll", update);
         window.removeEventListener("resize", update);
+        window.removeEventListener("load", remeasure);
+        remeasureTimers.forEach((t) => clearTimeout(t));
+        ro?.disconnect();
       };
     }
 
@@ -78,6 +105,9 @@ export function useScrollProgress(
       cancelAnimationFrame(raf);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("load", remeasure);
+      remeasureTimers.forEach((t) => clearTimeout(t));
+      ro?.disconnect();
     };
   }, [ref, smooth, lerp, emitDelta]);
 
