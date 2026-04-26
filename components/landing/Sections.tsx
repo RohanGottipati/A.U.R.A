@@ -623,7 +623,7 @@ export function FeatureStackSection() {
   const entryDur = slotSize * 0.4;
 
   return (
-    <section ref={sectionRef} style={{ height: `${N * 100}vh` }} className="relative">
+    <section ref={sectionRef} style={{ height: `${N * 140}vh` }} className="relative">
       <div className="sticky top-0 h-screen overflow-hidden">
         {FEATURE_SLIDES.map((slide, i) => {
           // How far into this card's entry window are we?
