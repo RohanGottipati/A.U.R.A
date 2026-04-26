@@ -1,21 +1,10 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
 import "./globals.css";
-
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
-});
+import { ModalProvider } from "@/context/ModalContext";
 
 export const metadata: Metadata = {
-  title: "FloorPlan AI",
-  description: "Upload any floor plan. Configure any space. In seconds.",
+  title: "A.U.R.A — Spatial Simulation Infrastructure",
+  description: "Turn static floor plans into living 3D environments you can walk through, test, and stress — before a single thing is built.",
 };
 
 export default function RootLayout({
@@ -25,10 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body>
+        <ModalProvider>
+          {children}
+        </ModalProvider>
       </body>
     </html>
   );
