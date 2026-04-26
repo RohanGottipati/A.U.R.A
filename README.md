@@ -1,4 +1,4 @@
-# FloorPlan AI
+# A.U.R.A
 
 Upload any floor plan image. Describe your use case in plain English. Walk through a fully configured 3D scene in seconds.
 
