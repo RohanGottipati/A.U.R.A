@@ -11,16 +11,6 @@ import { buildObjectMesh } from './objectMeshes';
 // not be drawn underneath it.
 const SIDEBAR_WIDTH = 280;
 
-const ROOM_TINT_COLORS: Record<string, number> = {
-  main_hall: 0x1f2937,
-  office:    0x252e3f,
-  corridor:  0x1d1d27,
-  bathroom:  0x213338,
-  storage:   0x2a241c,
-  kitchen:   0x2c241c,
-  entrance:  0x2c2c38,
-  unknown:   0x222230,
-};
 
 interface Props {
   sceneData: SceneFile;
@@ -176,48 +166,6 @@ function createFloor(width: number, depth: number): THREE.Group {
     group.add(m);
   }
 
-  return group;
-}
-
-function createRoomFloorOverlays(rooms: Room[]): THREE.Group {
-  // Adds a thin tinted floor patch per room above the global wood floor.
-  // Uses the room polygon when available (irregular / L-shaped rooms) and
-  // otherwise falls back to the bounding rectangle.
-  const group = new THREE.Group();
-  for (const room of rooms) {
-    const color = ROOM_TINT_COLORS[room.type] ?? ROOM_TINT_COLORS.unknown;
-    const material = new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.85,
-      metalness: 0.0,
-      transparent: true,
-      opacity: 0.45,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    });
-
-    let mesh: THREE.Mesh;
-    if (room.polygon && room.polygon.length >= 3) {
-      const shape = new THREE.Shape();
-      shape.moveTo(room.polygon[0].x, room.polygon[0].y);
-      for (let i = 1; i < room.polygon.length; i++) {
-        shape.lineTo(room.polygon[i].x, room.polygon[i].y);
-      }
-      shape.closePath();
-      const geometry = new THREE.ShapeGeometry(shape);
-      mesh = new THREE.Mesh(geometry, material);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.y = 0.012;
-    } else {
-      const geometry = new THREE.PlaneGeometry(room.width, room.height);
-      mesh = new THREE.Mesh(geometry, material);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(room.x + room.width / 2, 0.012, room.y + room.height / 2);
-    }
-    mesh.receiveShadow = true;
-    group.add(mesh);
-  }
   return group;
 }
 
@@ -397,7 +345,6 @@ export default function ThreeScene({
 
     /* ---------------- Static geometry ---------------- */
     scene.add(createFloor(fpw, fpd));
-    scene.add(createRoomFloorOverlays(sceneData.floorplan.rooms));
 
     const maxWallHeight = sceneData.floorplan.walls.reduce(
       (m, w) => Math.max(m, w.height),

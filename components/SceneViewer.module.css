@@ -215,6 +215,12 @@
   opacity: 0.8;
 }
 
+.btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+
 .btnIcon {
   font-size: 13px;
   line-height: 1;
