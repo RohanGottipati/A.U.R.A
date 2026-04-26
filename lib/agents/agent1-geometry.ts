@@ -1,7 +1,6 @@
 import { FloorPlan } from "../../types/scene";
 
-import { buildFallbackFloorPlan } from "./fallback";
-import { callGemini, fetchImageData, imageBufferToPart, isGeminiServiceError } from "../gemini";
+import { callGemini, fetchImageData, imageBufferToPart, isGeminiQuotaError, isGeminiServiceError } from "../gemini";
 import { normalizeFloorPlan, parseGeminiJsonResponse } from "../scene-validation";
 
 const AGENT1_PROMPT = `You are a floor plan analysis expert. You will receive an image of a floor plan.
@@ -61,6 +60,12 @@ CRITICAL: Return ONLY a valid JSON object. No markdown, no explanation, no code 
 // Backboard's image attachment pipeline indexes images as text summaries (document RAG),
 // so the underlying LLM never sees actual pixels. Real vision analysis requires the
 // inlineData multimodal path that Gemini exposes natively.
+//
+// IMPORTANT: We deliberately do NOT silently fall back to a rule-based generic
+// floor plan here. The fallback used to return a single-room rectangle that
+// looked nothing like the uploaded image, which made quota / API-key issues
+// impossible to diagnose from the UI. Failing the job with a clear message is
+// strictly better than serving a misleading scene.
 export async function runAgent1(floorplanImageUrl: string): Promise<FloorPlan> {
   const { buffer, mimeType } = await fetchImageData(floorplanImageUrl);
   const imagePart = imageBufferToPart(buffer, mimeType);
@@ -71,9 +76,20 @@ export async function runAgent1(floorplanImageUrl: string): Promise<FloorPlan> {
     });
     return normalizeFloorPlan(parseGeminiJsonResponse(rawResponse));
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+
+    if (isGeminiQuotaError(error)) {
+      console.error("Gemini Agent 1 hit quota:", detail);
+      throw new Error(
+        "Gemini vision API quota exceeded. Wait for the quota window to reset or use a different GEMINI_API_KEY before retrying.",
+      );
+    }
+
     if (isGeminiServiceError(error)) {
-      console.warn("Gemini agent 1 failed, using rule-based fallback:", error);
-      return buildFallbackFloorPlan(buffer, mimeType);
+      console.error("Gemini Agent 1 service error:", detail);
+      throw new Error(
+        `Gemini vision API request failed (${detail.substring(0, 200)}). Check GEMINI_API_KEY validity and network access.`,
+      );
     }
 
     throw error;

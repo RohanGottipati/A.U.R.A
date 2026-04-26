@@ -10,12 +10,18 @@ import { storage } from "./storage";
 function formatPipelineError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
 
+  // Agent 1 now throws explicit, user-facing messages for quota/service
+  // problems — surface them as-is.
+  if (/Gemini vision API/i.test(message)) {
+    return message;
+  }
+
   if (isGeminiQuotaError(error)) {
-    return "Gemini API quota exceeded. The fallback planner was attempted, but processing still could not complete.";
+    return "Gemini API quota exceeded. Wait for the quota window to reset or rotate your GEMINI_API_KEY before retrying.";
   }
 
   if (isGeminiServiceError(error)) {
-    return "Gemini API request failed. Please retry after confirming the API key, quota, and network access.";
+    return "Gemini API request failed. Confirm your GEMINI_API_KEY, quota, and network connectivity, then retry.";
   }
 
   if (isBackboardServiceError(error)) {
