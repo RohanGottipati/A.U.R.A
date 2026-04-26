@@ -11,6 +11,7 @@ interface Props {
   onUpdate: (id: string, changes: Partial<SceneObject>) => void;
   onDelete: (id: string) => void;
   onDeselect: () => void;
+  onRecordSnapshot: () => void;
 }
 
 const GROUPS: { label: string; defaultOpen: boolean; items: { label: string; type: ObjectType }[] }[] = [
@@ -60,10 +61,11 @@ function SectionDivider() {
 }
 
 function SliderRow({
-  label, min, max, step, value, unit, onChange,
+  label, min, max, step, value, unit, onChange, onRecordSnapshot,
 }: {
   label: string; min: number; max: number; step: number;
   value: number; unit: string; onChange: (v: number) => void;
+  onRecordSnapshot: () => void;
 }) {
   const display = unit === '°' ? `${Math.round(value)}°` : `${value.toFixed(1)}m`;
   return (
@@ -76,6 +78,7 @@ function SliderRow({
         max={max}
         step={step}
         value={value}
+        onMouseDown={onRecordSnapshot}
         onChange={(e) => onChange(Number(e.target.value))}
       />
       <span style={{ fontSize: 10, color: '#00d4ff', minWidth: 40, textAlign: 'right' }}>{display}</span>
@@ -101,6 +104,7 @@ export default function SceneSidebar({
   onUpdate,
   onDelete,
   onDeselect,
+  onRecordSnapshot,
 }: Props) {
   // objects prop is available for future use (e.g. object count display)
   void objects;
@@ -171,9 +175,9 @@ export default function SceneSidebar({
           POSITION
         </div>
         <SliderRow label="X" min={0} max={floorplan.width} step={0.1} value={obj.x} unit="m"
-          onChange={(v) => onUpdate(obj.id, { x: v })} />
+          onChange={(v) => onUpdate(obj.id, { x: v })} onRecordSnapshot={onRecordSnapshot} />
         <SliderRow label="Y" min={0} max={floorplan.depth} step={0.1} value={obj.y} unit="m"
-          onChange={(v) => onUpdate(obj.id, { y: v })} />
+          onChange={(v) => onUpdate(obj.id, { y: v })} onRecordSnapshot={onRecordSnapshot} />
       </div>
 
       <SectionDivider />
@@ -184,14 +188,14 @@ export default function SceneSidebar({
           ROTATION
         </div>
         <SliderRow label="°" min={0} max={360} step={5} value={obj.rotation} unit="°"
-          onChange={(v) => onUpdate(obj.id, { rotation: v })} />
+          onChange={(v) => onUpdate(obj.id, { rotation: v })} onRecordSnapshot={onRecordSnapshot} />
         <div style={{ display: 'flex', gap: 8 }}>
           {([{ label: '↺ -45°', delta: -45 }, { label: '+45° ↻', delta: 45 }] as const).map(({ label, delta }) => (
             <button
               key={label}
               type="button"
               className={styles.rotBtn}
-              onClick={() => onUpdate(obj.id, { rotation: ((obj.rotation + delta) % 360 + 360) % 360 })}
+              onClick={() => { onRecordSnapshot(); onUpdate(obj.id, { rotation: ((obj.rotation + delta) % 360 + 360) % 360 }); }}
             >
               {label}
             </button>
@@ -207,11 +211,11 @@ export default function SceneSidebar({
           SIZE
         </div>
         <SliderRow label="W" min={0.2} max={12} step={0.1} value={obj.width} unit="m"
-          onChange={(v) => onUpdate(obj.id, { width: v })} />
+          onChange={(v) => onUpdate(obj.id, { width: v })} onRecordSnapshot={onRecordSnapshot} />
         <SliderRow label="D" min={0.2} max={12} step={0.1} value={obj.depth} unit="m"
-          onChange={(v) => onUpdate(obj.id, { depth: v })} />
+          onChange={(v) => onUpdate(obj.id, { depth: v })} onRecordSnapshot={onRecordSnapshot} />
         <SliderRow label="H" min={0.1} max={6} step={0.05} value={obj.height} unit="m"
-          onChange={(v) => onUpdate(obj.id, { height: v })} />
+          onChange={(v) => onUpdate(obj.id, { height: v })} onRecordSnapshot={onRecordSnapshot} />
       </div>
 
       <SectionDivider />

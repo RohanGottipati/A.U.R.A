@@ -39,6 +39,8 @@ interface Props {
   // "Click on the floor to choose where to drop a new component" flow.
   placingObject?: boolean;
   onObjectSpawnSelected?: (x: number, z: number) => void;
+  // Called once when a drag begins so the parent can snapshot history before moves accumulate.
+  onBeforeMove?: () => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -299,6 +301,7 @@ export default function ThreeScene({
   onWalkSpawnSelected,
   placingObject = false,
   onObjectSpawnSelected,
+  onBeforeMove,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -334,6 +337,8 @@ export default function ThreeScene({
   placingObjectRef.current = placingObject;
   const onObjectSpawnSelectedRef = useRef(onObjectSpawnSelected);
   onObjectSpawnSelectedRef.current = onObjectSpawnSelected;
+  const onBeforeMoveRef = useRef(onBeforeMove);
+  onBeforeMoveRef.current = onBeforeMove;
   // Persist the last position the user was at when leaving walk mode so we
   // can return them there next time.
   const lastWalkPosRef = useRef<
@@ -640,6 +645,7 @@ export default function ThreeScene({
         }
         const hitId = node?.userData.objectId as string | undefined;
         if (hitId) {
+          onBeforeMoveRef.current?.(); // snapshot history ONCE before drag accumulates moves
           onSelectObject(hitId);
           isDragging.current = true;
           dragObjectId.current = hitId;

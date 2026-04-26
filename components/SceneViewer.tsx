@@ -58,6 +58,32 @@ export default function SceneViewer({ sceneData }: Props) {
   // we can spawn new objects under the user's current view.
   const cameraTargetRef = useRef<{ x: number; z: number } | null>(null);
 
+  // Undo history — ref so callbacks always see the live stack without stale closures.
+  const historyRef = useRef<SceneObject[][]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+
+  // Always-current snapshot of objects without closure staleness.
+  const objectsRef = useRef(objects);
+  objectsRef.current = objects;
+
+  // Call once at the START of an interaction (drag begin, slider mousedown, delete).
+  // Do NOT call on every onChange — that's the bug we're fixing.
+  const recordSnapshot = useCallback(() => {
+    historyRef.current = [...historyRef.current, objectsRef.current].slice(-50);
+    setCanUndo(true);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const stack = historyRef.current;
+    if (stack.length === 0) return;
+    const prev = stack[stack.length - 1];
+    historyRef.current = stack.slice(0, -1);
+    setObjects(prev);
+    setSelectedId(null);
+    setCanUndo(historyRef.current.length > 0);
+    setIsDirty(true);
+  }, []);
+
   const selectedObject = objects.find((o) => o.id === selectedId) ?? null;
 
   // Reset local state when a fresh scene is loaded (e.g. navigation).
@@ -66,18 +92,35 @@ export default function SceneViewer({ sceneData }: Props) {
     setSceneId(sceneData.sceneId);
     setSelectedId(null);
     setIsDirty(false);
+    historyRef.current = [];
+    setCanUndo(false);
   }, [sceneData]);
 
+  // Ctrl+Z / Cmd+Z keyboard shortcut for undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [handleUndo]);
+
+  // updateObject does NOT push history — callers are responsible for calling
+  // recordSnapshot() once before the interaction begins (slider mousedown, drag start).
   const updateObject = useCallback((id: string, changes: Partial<SceneObject>) => {
     setObjects((prev) => prev.map((o) => (o.id === id ? { ...o, ...changes } : o)));
     setIsDirty(true);
   }, []);
 
   const deleteObject = useCallback((id: string) => {
+    recordSnapshot(); // delete is a single discrete action — snapshot here is correct
     setObjects((prev) => prev.filter((o) => o.id !== id));
     setSelectedId(null);
     setIsDirty(true);
-  }, []);
+  }, [recordSnapshot]);
 
   // Sidebar "add" no longer drops the object immediately — it arms a
   // placement flow so the user can click on the floor to choose the spot.
@@ -118,12 +161,13 @@ export default function SceneViewer({ sceneData }: Props) {
         rotation: 0,
         label: `${type.charAt(0).toUpperCase() + type.slice(1)} ${objects.length + 1}`,
       };
+      recordSnapshot();
       setObjects((prev) => [...prev, newObj]);
       setSelectedId(newObj.id);
       setIsDirty(true);
       setPendingAddType(null);
     },
-    [pendingAddType, sceneData.floorplan, objects.length],
+    [pendingAddType, sceneData.floorplan, objects.length, recordSnapshot],
   );
 
   const handleShare = useCallback(async () => {
@@ -250,6 +294,7 @@ export default function SceneViewer({ sceneData }: Props) {
         selectedId={selectedId}
         onSelectObject={setSelectedId}
         onMoveObject={(id, x, y) => updateObject(id, { x, y })}
+        onBeforeMove={recordSnapshot}
         cameraTargetRef={cameraTargetRef}
         placingWalkSpawn={placingWalkSpawn}
         walkSpawn={walkSpawn}
@@ -265,6 +310,7 @@ export default function SceneViewer({ sceneData }: Props) {
         onUpdate={updateObject}
         onDelete={deleteObject}
         onDeselect={() => setSelectedId(null)}
+        onRecordSnapshot={recordSnapshot}
       />
 
       {/* ============== Top-left: Scene Info ============== */}
@@ -296,6 +342,19 @@ export default function SceneViewer({ sceneData }: Props) {
 
       {/* ============== Top-right: Action Buttons ============== */}
       <div className={styles.actions}>
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={!canUndo}
+          className={`${styles.btn} ${styles.bracket}`}
+          title="Undo (Ctrl+Z)"
+        >
+          <span className={styles.brBL} />
+          <span className={styles.brBR} />
+          <span className={styles.btnIcon}>&#8634;</span>
+          <span>UNDO</span>
+        </button>
+
         <button
           type="button"
           onClick={handleModeButton}
