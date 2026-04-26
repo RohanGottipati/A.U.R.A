@@ -70,7 +70,7 @@ function SliderRow({
   const display = unit === '°' ? `${Math.round(value)}°` : `${value.toFixed(1)}m`;
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', minWidth: 16 }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.55)', minWidth: 16 }}>{label}</span>
       <input
         type="range"
         className={styles.slider}

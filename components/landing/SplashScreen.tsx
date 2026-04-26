@@ -43,6 +43,8 @@ export default function SplashScreen() {
         className="absolute inset-0"
         style={{ background: "rgba(1, 8, 22, 0.45)" }}
       />
+      {/* Grain — matches every other blueprint page */}
+      <div className="grain" />
 
       <div className="relative z-10 flex flex-col items-center gap-10 text-center px-8">
         {/* Down arrow key cap */}

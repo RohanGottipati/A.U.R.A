@@ -165,7 +165,7 @@ export default function ScrollSimulation() {
   }, [progressRef, videoRefs, videoLayerRefs]);
 
   return (
-    <section ref={sectionRef} id="experience" className="relative w-full" style={{ height: "600vh" }}>
+    <section ref={sectionRef} id="experience" className="relative w-full" style={{ height: "calc(4500px + 100vh)" }}>
       <div className="sticky top-0 h-screen w-full overflow-hidden bg-[#040409]">
         {VIDEO_CLIPS.map((clip, i) => (
           <div

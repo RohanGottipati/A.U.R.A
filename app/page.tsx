@@ -3,7 +3,6 @@ import {
   ProblemSection,
   FeatureStackSection,
   FinalCTA,
-  Footer,
 } from "@/components/landing/Sections";
 import WaitlistModal from "@/components/landing/WaitlistModal";
 import SplashScreen from "@/components/landing/SplashScreen";
@@ -54,7 +53,6 @@ export default function Home() {
           <FinalCTA />
         </div>
       </main>
-      <Footer />
       <WaitlistModal />
     </div>
   );
