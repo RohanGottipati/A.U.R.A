@@ -6,7 +6,9 @@ export default function SplashScreen() {
   const [phase, setPhase] = useState<"visible" | "fading" | "gone">("visible");
 
   useEffect(() => {
-    // Lock scroll while splash is showing
+    // Reset scroll to top before locking — prevents browser scroll restoration
+    // from initializing scroll-driven animations in a mid-state on cached loads
+    window.scrollTo(0, 0);
     document.body.style.overflow = "hidden";
 
     const fadeTimer = setTimeout(() => setPhase("fading"), 3000);

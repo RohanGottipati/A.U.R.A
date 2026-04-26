@@ -599,6 +599,48 @@ const FEATURE_SLIDES = [
   },
 ];
 
+// Renders title + accent char-by-char based on charProgress (0→1)
+function TypedHeading({
+  title,
+  accent,
+  charProgress,
+}: {
+  title: string;
+  accent: string;
+  charProgress: number;
+}) {
+  const titleWithSpace = title + " ";
+  const totalLen = titleWithSpace.length + accent.length;
+  const visible = Math.round(charProgress * totalLen);
+
+  return (
+    <>
+      {Array.from(titleWithSpace).map((char, i) => (
+        <span key={i} style={{ opacity: i < visible ? 1 : 0 }}>
+          {char}
+        </span>
+      ))}
+      <span
+        style={{
+          textDecoration: "underline",
+          textDecorationColor: "rgba(255,255,255,0.55)",
+          textUnderlineOffset: "6px",
+          textDecorationThickness: "2px",
+        }}
+      >
+        {Array.from(accent).map((char, j) => {
+          const gi = titleWithSpace.length + j;
+          return (
+            <span key={j} style={{ opacity: gi < visible ? 1 : 0 }}>
+              {char}
+            </span>
+          );
+        })}
+      </span>
+    </>
+  );
+}
+
 export function FeatureStackSection() {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [progress, setProgress] = useState(0);
@@ -617,30 +659,42 @@ export function FeatureStackSection() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Each card gets 1/N of the total progress range.
-  // Entry animation lasts 40% of one card's range.
+  // Each card owns exactly 1/N of total progress — equal scroll per card.
   const slotSize = 1 / N;
-  const entryDur = slotSize * 0.4;
+  // Entry and exit each take 38% of one slot; they overlap at the hand-off point
+  // so the incoming card starts rising as the outgoing text begins falling.
+  const transDur = slotSize * 0.38;
 
   return (
     <section ref={sectionRef} style={{ height: `${N * 350}vh` }} className="relative">
       <div className="sticky top-0 h-screen overflow-hidden">
         {FEATURE_SLIDES.map((slide, i) => {
-          // How far into this card's entry window are we?
-          const entryStart = i === 0 ? 0 : i * slotSize - entryDur * 0.25;
-          const rawEntry = i === 0 ? 1 : Math.min(1, Math.max(0, (progress - entryStart) / entryDur));
+          // ── Entry: card rises from below ───────────────────────────────
+          // Starts half a transDur before this card's slot begins so the
+          // transition straddles the slot boundary (same budget for every card).
+          const entryStart = i === 0 ? -1 : i * slotSize - transDur * 0.5;
+          const rawEntry = i === 0 ? 1 : Math.min(1, Math.max(0, (progress - entryStart) / transDur));
           const entryT = rawEntry * rawEntry * (3 - 2 * rawEntry); // smoothstep
 
-          // Slide in from below — card 0 is always in place
-          const ty = i === 0 ? 0 : (1 - entryT) * 100;
+          const ty = i === 0 ? 0 : (1 - entryT) * 100; // vh — slides up from bottom
 
-          // Subtle scale-back as the NEXT card slides over this one
-          const coverStart = (i + 1) * slotSize - entryDur * 0.25;
-          const coverRaw = i < N - 1 ? Math.min(1, Math.max(0, (progress - coverStart) / entryDur)) : 0;
-          const coverT = coverRaw * coverRaw * (3 - 2 * coverRaw);
-          const scale = 1 - coverT * 0.04;
-          // Text (heading + body + tags) fades out as next card comes in
-          const textOpacity = 1 - coverT;
+          // ── Exit: text falls off as next card rises ────────────────────
+          const exitStart = i < N - 1 ? (i + 1) * slotSize - transDur * 0.5 : 2;
+          const rawExit = i < N - 1 ? Math.min(1, Math.max(0, (progress - exitStart) / transDur)) : 0;
+          const exitT = rawExit * rawExit * (3 - 2 * rawExit);
+
+          const scale = 1 - exitT * 0.05;
+          // Text opacity + downward drift — "words falling off the screen"
+          const textOpacity = 1 - exitT;
+          const textFallY = exitT * 72; // px — gravity pull
+
+          // ── Typing: characters appear as the card enters ───────────────
+          // Delay the start slightly so a few chars appear only once the
+          // card is already ~25% into frame (feels more intentional).
+          const typingRaw = i === 0 ? 1 : Math.min(1, Math.max(0, (rawEntry - 0.25) / 0.75));
+          const charProgress = typingRaw * typingRaw * (3 - 2 * typingRaw);
+          // Body paragraph waits until heading is ~60% typed
+          const bodyOpacity = Math.min(1, Math.max(0, (charProgress - 0.58) / 0.42));
 
           return (
             <div
@@ -652,7 +706,7 @@ export function FeatureStackSection() {
                 willChange: "transform",
               }}
             >
-              {/* Subtle ambient glow behind the window */}
+              {/* Ambient glow */}
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
@@ -660,27 +714,31 @@ export function FeatureStackSection() {
                 }}
               />
 
-              {/* Heading */}
-              <div className="relative z-10 text-center mb-5" style={{ opacity: textOpacity, willChange: "opacity" }}>
+              {/* Heading — types in on entry, falls off on exit */}
+              <div
+                className="relative z-10 text-center mb-5"
+                style={{
+                  opacity: textOpacity,
+                  transform: `translateY(${textFallY}px)`,
+                  willChange: "opacity, transform",
+                }}
+              >
                 <h2 className="font-heading text-3xl sm:text-4xl lg:text-[2.8rem] font-bold tracking-tight text-white leading-snug">
-                  {slide.title}{" "}
-                  <span
-                    style={{
-                      textDecoration: "underline",
-                      textDecorationColor: "rgba(255,255,255,0.55)",
-                      textUnderlineOffset: "6px",
-                      textDecorationThickness: "2px",
-                    }}
-                  >
-                    {slide.accent}
-                  </span>
+                  <TypedHeading
+                    title={slide.title}
+                    accent={slide.accent}
+                    charProgress={i === 0 ? 1 : charProgress}
+                  />
                 </h2>
-                <p className="mt-3 text-white/50 text-base sm:text-lg max-w-xl mx-auto leading-relaxed">
+                <p
+                  className="mt-3 text-white/50 text-base sm:text-lg max-w-xl mx-auto leading-relaxed"
+                  style={{ opacity: bodyOpacity }}
+                >
                   {slide.body}
                 </p>
               </div>
 
-              {/* macOS-style window — placeholder */}
+              {/* macOS-style window */}
               <div
                 className="relative z-10 w-full"
                 style={{ maxWidth: "min(800px, 84vw)" }}
@@ -693,7 +751,6 @@ export function FeatureStackSection() {
                     background: "#1c1c20",
                   }}
                 >
-                  {/* Title bar */}
                   <div
                     className="flex items-center gap-2 px-4"
                     style={{
@@ -706,7 +763,6 @@ export function FeatureStackSection() {
                     <span className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
                     <span className="w-3 h-3 rounded-full bg-[#28c940]" />
                   </div>
-                  {/* Placeholder video area */}
                   <div
                     className="w-full flex items-center justify-center"
                     style={{
@@ -721,8 +777,15 @@ export function FeatureStackSection() {
                 </div>
               </div>
 
-              {/* Perfect for: tags */}
-              <div className="relative z-10 flex items-center justify-center gap-2.5 mt-6 flex-wrap" style={{ opacity: textOpacity, willChange: "opacity" }}>
+              {/* Tags — appear after body, fall off on exit */}
+              <div
+                className="relative z-10 flex items-center justify-center gap-2.5 mt-6 flex-wrap"
+                style={{
+                  opacity: textOpacity * bodyOpacity,
+                  transform: `translateY(${textFallY}px)`,
+                  willChange: "opacity, transform",
+                }}
+              >
                 <span className="text-white/50 text-sm font-medium flex items-center gap-1.5">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ opacity: 0.6 }}>
                     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
