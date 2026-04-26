@@ -36,6 +36,9 @@ interface Props {
   placingWalkSpawn?: boolean;
   walkSpawn?: { x: number; z: number } | null;
   onWalkSpawnSelected?: (x: number, z: number) => void;
+  // "Click on the floor to choose where to drop a new component" flow.
+  placingObject?: boolean;
+  onObjectSpawnSelected?: (x: number, z: number) => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -294,6 +297,8 @@ export default function ThreeScene({
   placingWalkSpawn = false,
   walkSpawn = null,
   onWalkSpawnSelected,
+  placingObject = false,
+  onObjectSpawnSelected,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -325,6 +330,10 @@ export default function ThreeScene({
   placingWalkSpawnRef.current = placingWalkSpawn;
   const onWalkSpawnSelectedRef = useRef(onWalkSpawnSelected);
   onWalkSpawnSelectedRef.current = onWalkSpawnSelected;
+  const placingObjectRef = useRef(placingObject);
+  placingObjectRef.current = placingObject;
+  const onObjectSpawnSelectedRef = useRef(onObjectSpawnSelected);
+  onObjectSpawnSelectedRef.current = onObjectSpawnSelected;
   // Persist the last position the user was at when leaving walk mode so we
   // can return them there next time.
   const lastWalkPosRef = useRef<
@@ -611,6 +620,16 @@ export default function ThreeScene({
         return;
       }
 
+      // Object placement: same idea — snap to floor, fire callback.
+      if (placingObjectRef.current) {
+        const hit = new THREE.Vector3();
+        if (clickRaycaster.ray.intersectPlane(floorPlaneRef.current, hit)) {
+          const { x, z } = clampToFloor(hit.x, hit.z);
+          onObjectSpawnSelectedRef.current?.(x, z);
+        }
+        return;
+      }
+
       const allGroups = Array.from(meshMap.current.values());
       const intersects = clickRaycaster.intersectObjects(allGroups, true);
 
@@ -633,7 +652,10 @@ export default function ThreeScene({
 
     const onMouseMoveDrag = (e: MouseEvent) => {
       // Update the placement marker as the cursor moves over the floor.
-      if (placingWalkSpawnRef.current && modeRef.current !== 'walk') {
+      if (
+        (placingWalkSpawnRef.current || placingObjectRef.current) &&
+        modeRef.current !== 'walk'
+      ) {
         const cam = cameraRef.current;
         if (cam) {
           const rect = canvas.getBoundingClientRect();
@@ -850,11 +872,11 @@ export default function ThreeScene({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.style.cursor = placingWalkSpawn ? 'crosshair' : '';
+    canvas.style.cursor = placingWalkSpawn || placingObject ? 'crosshair' : '';
     return () => {
       canvas.style.cursor = '';
     };
-  }, [placingWalkSpawn]);
+  }, [placingWalkSpawn, placingObject]);
 
   /* ---------------- Reactive objects sync ---------------- */
   useEffect(() => {

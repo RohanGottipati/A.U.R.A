@@ -51,6 +51,9 @@ export default function SceneViewer({ sceneData }: Props) {
   const [placingWalkSpawn, setPlacingWalkSpawn] = useState(false);
   const [walkSpawn, setWalkSpawn] = useState<{ x: number; z: number } | null>(null);
 
+  // "Click to choose where to drop a new component" flow.
+  const [pendingAddType, setPendingAddType] = useState<ObjectType | null>(null);
+
   // Three.js writes the current orbit target into this ref every frame so
   // we can spawn new objects under the user's current view.
   const cameraTargetRef = useRef<{ x: number; z: number } | null>(null);
@@ -76,28 +79,40 @@ export default function SceneViewer({ sceneData }: Props) {
     setIsDirty(true);
   }, []);
 
+  // Sidebar "add" no longer drops the object immediately — it arms a
+  // placement flow so the user can click on the floor to choose the spot.
   const addObject = useCallback(
     (type: ObjectType) => {
+      // Placement requires the orbit camera so the user can pick a spot.
+      setMode('orbit');
+      // If user was placing a walk spawn, cancel that — the two flows are
+      // mutually exclusive.
+      setPlacingWalkSpawn(false);
+      // Re-arming with a different type just swaps the pending type.
+      setPendingAddType(type);
+    },
+    [],
+  );
+
+  // Fired by ThreeScene when the user clicks the floor while a pending
+  // add type is set. Actually creates the object at the chosen spot.
+  const handleObjectSpawnSelected = useCallback(
+    (x: number, z: number) => {
+      const type = pendingAddType;
+      if (!type) return;
       const sizes = DEFAULT_SIZES[type];
       const fpW = sceneData.floorplan.width;
       const fpD = sceneData.floorplan.depth;
-
-      // Drop the new object where the user is currently looking (orbit
-      // target) so it lands inside the visible viewport rather than at the
-      // dead centre of the floor plan.
-      const target = cameraTargetRef.current;
-      const rawX = target ? target.x : fpW / 2;
-      const rawY = target ? target.z : fpD / 2;
       const margin = Math.max(sizes.width, sizes.depth) / 2 + 0.1;
-      const x = Math.max(margin, Math.min(fpW - margin, rawX));
-      const y = Math.max(margin, Math.min(fpD - margin, rawY));
+      const cx = Math.max(margin, Math.min(fpW - margin, x));
+      const cy = Math.max(margin, Math.min(fpD - margin, z));
 
       const newObj: SceneObject = {
         id: `obj_${Date.now()}`,
         type,
         roomId: sceneData.floorplan.rooms[0]?.id ?? 'room_1',
-        x,
-        y,
+        x: cx,
+        y: cy,
         z: 0,
         ...sizes,
         rotation: 0,
@@ -106,8 +121,9 @@ export default function SceneViewer({ sceneData }: Props) {
       setObjects((prev) => [...prev, newObj]);
       setSelectedId(newObj.id);
       setIsDirty(true);
+      setPendingAddType(null);
     },
-    [sceneData.floorplan, objects.length],
+    [pendingAddType, sceneData.floorplan, objects.length],
   );
 
   const handleShare = useCallback(async () => {
@@ -168,6 +184,16 @@ export default function SceneViewer({ sceneData }: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, [placingWalkSpawn]);
 
+  // ESC also cancels a pending object placement.
+  useEffect(() => {
+    if (!pendingAddType) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPendingAddType(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [pendingAddType]);
+
   const handleModeButton = useCallback(() => {
     if (mode === 'walk') {
       setMode('orbit');
@@ -178,6 +204,8 @@ export default function SceneViewer({ sceneData }: Props) {
       setPlacingWalkSpawn(false);
       return;
     }
+    // Starting a walk-spawn placement cancels any pending object placement.
+    setPendingAddType(null);
     setPlacingWalkSpawn(true);
   }, [mode, placingWalkSpawn]);
 
@@ -226,6 +254,8 @@ export default function SceneViewer({ sceneData }: Props) {
         placingWalkSpawn={placingWalkSpawn}
         walkSpawn={walkSpawn}
         onWalkSpawnSelected={handleWalkSpawnSelected}
+        placingObject={pendingAddType !== null}
+        onObjectSpawnSelected={handleObjectSpawnSelected}
       />
       <SceneSidebar
         objects={objects}
@@ -347,6 +377,22 @@ export default function SceneViewer({ sceneData }: Props) {
             {'\u25CE'}
           </span>
           <span>CLICK ON THE FLOOR TO CHOOSE YOUR STARTING POINT</span>
+          <span className={styles.spawnHintEsc}>ESC TO CANCEL</span>
+        </div>
+      )}
+
+      {/* ============== Bottom-center: Object Placement Hint ============== */}
+      {pendingAddType && !isWalk && (
+        <div className={`${styles.spawnHint} ${styles.bracket}`}>
+          <span className={styles.brBL} />
+          <span className={styles.brBR} />
+          <span className={styles.spawnHintIcon} aria-hidden>
+            {'+'}
+          </span>
+          <span>
+            CLICK ON THE FLOOR TO PLACE{' '}
+            {pendingAddType.replace('_', ' ').toUpperCase()}
+          </span>
           <span className={styles.spawnHintEsc}>ESC TO CANCEL</span>
         </div>
       )}
