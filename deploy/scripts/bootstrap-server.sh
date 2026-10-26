@@ -2,7 +2,7 @@
 # bootstrap-server.sh - Step 3 of the Vultr deployment plan.
 #
 # Run this ONCE, as root, on a fresh Ubuntu 24.04 LTS Vultr Cloud Compute VPS.
-# It creates a `deploy` user, locks down SSH/UFW, and installs Node 20, PM2,
+# It creates a `deploy` user, locks down SSH/UFW, and installs Node 22, PM2,
 # Nginx, git, and the psql client used to apply migrations.
 #
 # Usage (from your laptop):
@@ -67,9 +67,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get upgrade -y
 
-echo "==> Installing Node 20.x from NodeSource"
-if ! command -v node >/dev/null 2>&1 || ! node -v | grep -q "^v20"; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+echo "==> Installing Node 22.x from NodeSource"
+if ! command -v node >/dev/null 2>&1 || ! node -v | grep -q "^v22"; then
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
 fi
 

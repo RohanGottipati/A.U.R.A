@@ -79,7 +79,7 @@ legacy/                         # Archived earlier A.U.R.A code, not part of the
 
 ## Prerequisites
 
-- Node.js 20 (`.nvmrc`, `engines: 20.x`) and npm
+- Node.js 22 (`.nvmrc`, `engines: 22.x`) and npm
 - A PostgreSQL database (with `pgcrypto`) and `psql` for migrations
 - A Vultr Object Storage (or other S3-compatible) bucket
 - A Google Gemini API key and a Backboard API key
@@ -156,9 +156,9 @@ Template: `.env.example` (production template: `deploy/.env.production.example`)
 
 ## Deployment
 
-Production is deployed on Vercel from `main` (Next.js preset, Node 20 from `engines`); pull requests get Vercel preview deployments. `.vercelignore` keeps large local-only media out of uploads. Environment variables must be set in the Vercel project settings.
+Production is deployed on Vercel from `main` (Next.js preset, Node 22 from `engines`); pull requests get Vercel preview deployments. `.vercelignore` keeps large local-only media out of uploads. Environment variables must be set in the Vercel project settings.
 
-Alternatively, `deploy/README.md` walks through deploying to a Vultr Ubuntu VPS (Node 20, PM2 via `ecosystem.config.cjs`, Nginx reverse proxy, existing Vultr Postgres and Object Storage) using the scripts in `deploy/scripts/`.
+Alternatively, `deploy/README.md` walks through deploying to a Vultr Ubuntu VPS (Node 22, PM2 via `ecosystem.config.cjs`, Nginx reverse proxy, existing Vultr Postgres and Object Storage) using the scripts in `deploy/scripts/`.
 
 ## Legacy Code
 

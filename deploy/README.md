@@ -1,6 +1,6 @@
 # Deploying FloorPlan AI to Vultr
 
-This folder contains everything needed to deploy the app to a Vultr Cloud Compute VPS running Ubuntu 24.04 with Node 20 + PM2 + Nginx, reusing the existing Vultr Managed Postgres and Vultr Object Storage.
+This folder contains everything needed to deploy the app to a Vultr Cloud Compute VPS running Ubuntu 24.04 with Node 22 + PM2 + Nginx, reusing the existing Vultr Managed Postgres and Vultr Object Storage.
 
 ```
 deploy/
@@ -39,7 +39,7 @@ scp deploy/scripts/bootstrap-server.sh root@${VPS_IP}:/root/
 ssh root@${VPS_IP} 'bash /root/bootstrap-server.sh'
 ```
 
-This installs Node 20, Nginx, PM2, git, postgresql-client-16, creates the `deploy` user, and locks down UFW to SSH + 80.
+This installs Node 22, Nginx, PM2, git, postgresql-client-16, creates the `deploy` user, and locks down UFW to SSH + 80.
 
 ### 4. Upload the code (from your laptop)
 
