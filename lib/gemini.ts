@@ -94,8 +94,3 @@ export function imageBufferToPart(buffer: Buffer, mimeType: string): Part {
     },
   };
 }
-
-export async function imageUrlToPart(url: string): Promise<Part> {
-  const { buffer, mimeType } = await fetchImageData(url);
-  return imageBufferToPart(buffer, mimeType);
-}

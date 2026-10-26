@@ -95,10 +95,6 @@ export async function ensureAssistant(slot: AgentSlot): Promise<string> {
   return created.assistant_id;
 }
 
-export function getAgentDefinition(slot: AgentSlot): AgentDefinition {
-  return AGENT_DEFINITIONS[slot];
-}
-
 export function listAgentDefinitions(): AgentDefinition[] {
   return [AGENT_DEFINITIONS.agent1, AGENT_DEFINITIONS.agent2, AGENT_DEFINITIONS.agent3];
 }

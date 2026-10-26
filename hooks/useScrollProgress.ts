@@ -114,25 +114,6 @@ export function useScrollProgress(
   return [progress, displayedRef];
 }
 
-export function useInView(ref: React.RefObject<HTMLElement | null>, threshold = 0.15) {
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    if (!ref.current) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setInView(true); },
-      { threshold }
-    );
-    obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [ref, threshold]);
-  return inView;
-}
-
-export function mapClamp(value: number, inMin: number, inMax: number, outMin: number, outMax: number) {
-  const t = Math.max(0, Math.min(1, (value - inMin) / (inMax - inMin)));
-  return outMin + (outMax - outMin) * t;
-}
-
 export function smoothstep(edge0: number, edge1: number, x: number) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
