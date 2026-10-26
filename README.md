@@ -27,7 +27,7 @@ Originally built as "FloorPlan AI" at BearHacks (the npm package is still named 
 | Agent orchestration | Backboard API |
 | Database | PostgreSQL (Vultr Managed) via `pg` |
 | File storage | Vultr Object Storage (S3-compatible) via `@aws-sdk/client-s3` |
-| Hosting | Vultr VPS with PM2 + Nginx (`deploy/`); `.vercelignore` is also present for Vercel deploys |
+| Hosting | Vercel (production: https://aura-bay-nu.vercel.app) or a Vultr VPS with PM2 + Nginx (`deploy/`) |
 
 ## AI Pipeline
 
@@ -93,8 +93,7 @@ npm install
 # 2. Create your env file and fill in the values (see below)
 cp .env.example .env.local
 
-# 3. Apply the database migrations (on an empty database run 002 twice, see note below)
-psql "$DATABASE_URL" -f migrations/002_floorplan_ai_schema.sql
+# 3. Apply the database migrations (idempotent, safe to re-run)
 psql "$DATABASE_URL" -f migrations/002_floorplan_ai_schema.sql
 psql "$DATABASE_URL" -f migrations/003_add_image_hash.sql
 
@@ -108,7 +107,7 @@ npm run check
 npm run dev
 ```
 
-> **Migration note:** `002_floorplan_ai_schema.sql` creates `jobs` (which references `scenes`) before `scenes`, so on an empty database the first run only creates `scenes` and prints errors for `jobs`. The second run creates `jobs` and the foreign keys; every statement is idempotent. `deploy/scripts/deploy-app.sh` runs it once with `ON_ERROR_STOP=1`, so apply the migrations manually before the first deploy to a fresh database.
+> **Migrations:** both files use `IF NOT EXISTS` guards, so they can be re-run safely. `deploy/scripts/deploy-app.sh` applies them on every deploy.
 
 The landing page and the `Test.webp` demo flow work without any backend services. Real uploads need every required variable below; missing ones cause a `Missing required environment variable` error at request time.
 
@@ -157,8 +156,10 @@ Template: `.env.example` (production template: `deploy/.env.production.example`)
 
 ## Deployment
 
-`deploy/README.md` walks through deploying to a Vultr Ubuntu VPS (Node 20, PM2 via `ecosystem.config.cjs`, Nginx reverse proxy, existing Vultr Postgres and Object Storage) using the scripts in `deploy/scripts/`.
+Production is deployed on Vercel from `main` (Next.js preset, Node 20 from `engines`); pull requests get Vercel preview deployments. `.vercelignore` keeps large local-only media out of uploads. Environment variables must be set in the Vercel project settings.
+
+Alternatively, `deploy/README.md` walks through deploying to a Vultr Ubuntu VPS (Node 20, PM2 via `ecosystem.config.cjs`, Nginx reverse proxy, existing Vultr Postgres and Object Storage) using the scripts in `deploy/scripts/`.
 
 ## Legacy Code
 
-`legacy/` holds the archived earlier A.U.R.A backend and frontend. It is excluded from linting, type-checking, and deploy uploads and is kept for reference only.
+`legacy/` holds the archived earlier A.U.R.A backend and frontend. It is excluded from linting, type-checking, and the VPS upload (`deploy/scripts/upload-code.sh`) and is kept for reference only.
